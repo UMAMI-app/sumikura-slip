@@ -11,14 +11,23 @@ UMAMI stock（尼崎市場 在庫管理アプリ）と同じ構成。
 - ログイン機能なし（社内利用のみ）
 
 ## 原稿読み込みについて（既存アプリからの移植）
-既存アプリ「案内生成アプリ」(UMAMI-app/info-generate, upload.html) の原稿読み込み処理を
-調査のうえ、コード・ロジックを移植した（既存アプリ自体は一切変更していない）。
+既存アプリ「案内生成アプリ」(UMAMI-app/info-generate, upload.html) には磯崎・角倉・イチマル・
+荒木鮮魚の4つのタブがあり、それぞれ全く別の解析ロジックを持つ。このアプリで使う原稿は
+**「角倉」タブのものだけ**なので、角倉タブの解析ロジックだけを調査のうえ移植した
+（磯崎・イチマル・荒木鮮魚は対象外。既存アプリのファイル自体は一切変更していない）。
 
-- `public/pure_snappy.py` `public/numbers_to_tsv.py` … info-generateからそのままコピー
-- `src/lib/manuscript.js` … Pyodide初期化、TSVグリッド解析(parseGrid)、価格解析(parsePrice)、
-  産地・サイズのテキスト整形ヘルパーは移植。案内文生成（カテゴリー分類・絵文字装飾等）の
-  ロジックは持ち込まず、この新アプリ向けに「品目・産地・規格・単価・単価単位」を抽出する
-  `extractManuscriptItems()` を新規実装している。
+- `src/lib/manuscriptKadokura.js` … 角倉タブの
+  ORIGIN_NAMES(都道府県+主要輸入国) / extractNameAndOrigin / parseOriginLine / normalizeName /
+  groupLines（原稿の生テキストを「・品目名」区切りで品目ブロックに分割する） /
+  resolveNameOrigin をほぼそのまま移植。角倉タブが持つ「価格ルールによる掛け率計算
+  (calcPrice)」は案内文向けの機能でありこのアプリには不要なため持ち込まず、
+  代わりに原稿の生の単価をそのまま返す `parseVariantLineRaw` を新規実装した。
+  由良ウニ・丸ウニ(◎)・宮津トリ貝など、既存アプリ側も専用の組み立て関数を持つほど
+  特殊な書式の品目は自動抽出の対象外とし、「要確認」として一覧に出すので手動で入力する。
+- `src/lib/manuscript.js` … 磯崎タブ(.numbersファイル直接読み込み / 4列グリッド解析)から
+  移植したコードだが、**現在は使用していない**（角倉タブのみが対象のため）。
+  `inferPriceUnit`（単価単位の推測）だけはmanuscriptKadokura.jsから再利用している。
+  磯崎タブが将来必要になった場合のために残してある。
 
 ## セットアップ
 
@@ -26,12 +35,12 @@ UMAMI stock（尼崎市場 在庫管理アプリ）と同じ構成。
 npm install
 ```
 
-### Supabase設定（必須）
-1. https://supabase.com で新規プロジェクトを作成
-2. SQL Editorで `supabase/schema.sql` の内容を実行してテーブルを作成
-3. Storage で `invoices` という名前のバケットを作成（Public推奨。納品書画像の保存用。※現バージョンでは画像はブラウザからのダウンロードのみ対応、Storageアップロードは未実装）
-4. Project Settings → API から Project URL と anon public key を取得
-5. `src/lib/supabase.js` の `SUPABASE_URL` / `SUPABASE_KEY` を書き換える
+### Supabase設定
+`src/lib/supabase.js` に Project URL / anon key を設定済み。
+
+**テーブル作成が必要**: このセッションからはネットワーク制限によりSupabaseへ直接アクセスできな
+かったため、`supabase/schema.sql` の内容をSupabaseダッシュボードのSQL Editorに貼り付けて
+実行してください（初回のみ）。
 
 ### 開発サーバー起動
 ```bash
@@ -41,7 +50,7 @@ npm run dev
 ### ロジックのテスト（Node上で単価計算・原稿解析ロジックを検証）
 ```bash
 node scripts/test-pricing.mjs
-node scripts/test-manuscript.mjs
+node scripts/test-manuscript-kadokura.mjs
 ```
 
 ### ビルド
@@ -50,7 +59,7 @@ npm run build
 ```
 
 ## 現在の実装状況（MVP）
-- [x] 原稿読み込み（.numbersファイル直接読込 / テキスト貼り付けの両対応）
+- [x] 原稿読み込み（角倉タブ形式のテキスト貼り付け、抽出結果は保存前に全項目編集可能）
 - [x] 発注一覧（当日航空便・当日配送便・翌日宅急便で表示分け、編集可能）
 - [x] 出荷チェック
 - [x] 原稿商品への手動紐付け（AI自動照合なし）、原稿にない商品は「原稿価格なし」
@@ -64,8 +73,9 @@ npm run build
 - [x] 納品書履歴（日付範囲指定、過去の納品書の再表示）
 
 ## 未実装・要相談
-- 発注リストの一括インポート: 実際の発注リストのフォーマット（どのシステムから、どんな形式で
-  出力されるか）が未確認のため、現状は「1件ずつ手動追加」または「タブ区切りテキストの
-  一括貼り付け（仮フォーマット）」のみ対応。実際のフォーマットが分かり次第、専用のインポート
-  処理に差し替える。
+- 発注リストの一括インポート: 実際の発注リストのフォーマットが未確認のため、現状は
+  「1件ずつ手動追加」または「タブ区切りテキストの一括貼り付け（仮フォーマット）」のみ対応。
+  実際のフォーマットが分かり次第、専用のインポート処理に差し替える。
 - 納品書画像のSupabase Storageへの自動アップロード（現在はブラウザへのダウンロードのみ）
+- 角倉原稿の特殊フォーマット（由良ウニ・丸ウニ◎・宮津トリ貝）は自動抽出対象外。実運用で
+  頻出するようなら専用の抽出処理を追加する。

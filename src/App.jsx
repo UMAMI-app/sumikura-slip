@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { db, isSupabaseConfigured } from "./lib/supabase";
-import { parseGrid, extractManuscriptItems, numbersFileToGridText } from "./lib/manuscript";
+import { extractKadokuraManuscriptItems } from "./lib/manuscriptKadokura";
 import {
   calcLineAmount,
   comparePrice,
@@ -206,46 +206,29 @@ function tabBtnStyle(active) {
 
 /* ============================= 原稿読み込み ============================= */
 function ManuscriptPanel({ date, items, loading, onSaved }) {
-  const [pyodideStatus, setPyodideStatus] = useState("");
   const [pasteText, setPasteText] = useState("");
   const [preview, setPreview] = useState(null); // { items, skippedLines }
-  const [sourceLabel, setSourceLabel] = useState("");
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
-  const fileInputRef = useRef(null);
 
-  const runExtract = (tsvText, label, sourceType) => {
-    const { grid, blocks } = parseGrid(tsvText);
-    const result = extractManuscriptItems(grid, blocks);
-    setPreview({ ...result, rawGridText: tsvText, sourceType });
-    setSourceLabel(label);
-  };
-
-  const handleFile = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    setErr("");
-    try {
-      const tsv = await numbersFileToGridText(file, setPyodideStatus);
-      runExtract(tsv, file.name, "numbers_file");
-    } catch (e2) {
-      console.error(e2);
-      setErr("解析に失敗しました: " + (e2.message || e2) + "（うまくいかない場合はコピー＆ペーストでお試しください）");
-    } finally {
-      setPyodideStatus("");
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    }
-  };
-
-  const handlePasteExtract = () => {
+  const handleExtract = () => {
     if (!pasteText.trim()) return;
-    runExtract(pasteText, "貼り付けテキスト", "paste");
+    const result = extractKadokuraManuscriptItems(pasteText);
+    setPreview({ ...result, rawText: pasteText });
   };
 
   const updatePreviewItem = (idx, patch) => {
     setPreview((prev) => {
       const items = prev.items.slice();
       items[idx] = { ...items[idx], ...patch };
+      return { ...prev, items };
+    });
+  };
+
+  const removePreviewItem = (idx) => {
+    setPreview((prev) => {
+      const items = prev.items.slice();
+      items.splice(idx, 1);
       return { ...prev, items };
     });
   };
@@ -257,9 +240,9 @@ function ManuscriptPanel({ date, items, loading, onSaved }) {
     try {
       const [batch] = await db.insert("manuscript_batches", {
         manuscript_date: date,
-        source_type: preview.sourceType,
-        source_filename: sourceLabel,
-        raw_grid_text: preview.rawGridText,
+        source_type: "kadokura_paste",
+        source_filename: "角倉原稿(貼り付け)",
+        raw_grid_text: preview.rawText,
       });
       const rows = preview.items.map((it) => ({ ...it, batch_id: batch.id }));
       await db.insertMany("manuscript_items", rows);
@@ -276,24 +259,21 @@ function ManuscriptPanel({ date, items, loading, onSaved }) {
   return (
     <div>
       <h2 style={h2()}>原稿読み込み（{date}）</h2>
+      <p style={{ fontSize: 12, color: T.textSub, marginTop: -6, marginBottom: 12 }}>
+        角倉の原稿テキストを貼り付けてください（案内生成アプリの「角倉」タブと同じ入力形式。磯崎・イチマル・荒木鮮魚は対象外です）。
+      </p>
 
       <section style={card()}>
-        <h3 style={h3()}>方法1: .numbersファイルを直接読み込む</h3>
-        <input type="file" accept=".numbers" ref={fileInputRef} onChange={handleFile} />
-        {pyodideStatus && <p style={{ fontSize: 13, color: T.textSub }}>{pyodideStatus}</p>}
-      </section>
-
-      <section style={card()}>
-        <h3 style={h3()}>方法2: テキストを貼り付ける（タブ区切り・従来通り）</h3>
+        <h3 style={h3()}>原稿テキストを貼り付け</h3>
         <textarea
           value={pasteText}
           onChange={(e) => setPasteText(e.target.value)}
-          placeholder={"魚種\tサイズ\t産地\t価格\n白甘鯛\t1.5kg\t和歌山\tk12,000"}
-          rows={6}
+          placeholder={"・白甘鯛\n和歌山\n1.5kg k12,000\n\n・メックリアジ兵庫(二見)\n1.5kg k1,200"}
+          rows={10}
           style={{ width: "100%", fontFamily: "monospace", fontSize: 13, padding: 8, border: `1px solid ${T.border}`, borderRadius: 6 }}
         />
         <div style={{ marginTop: 8 }}>
-          <button style={btn()} onClick={handlePasteExtract}>解析する</button>
+          <button style={btn(true)} onClick={handleExtract}>解析する</button>
         </div>
       </section>
 
@@ -301,9 +281,7 @@ function ManuscriptPanel({ date, items, loading, onSaved }) {
 
       {preview && (
         <section style={card()}>
-          <h3 style={h3()}>
-            抽出結果プレビュー（{sourceLabel}） — {preview.items.length}件
-          </h3>
+          <h3 style={h3()}>抽出結果プレビュー — {preview.items.length}件（内容を確認・修正してから保存してください）</h3>
           <div style={{ overflowX: "auto" }}>
             <table style={table()}>
               <thead>
@@ -313,23 +291,25 @@ function ManuscriptPanel({ date, items, loading, onSaved }) {
                   <th style={th()}>規格</th>
                   <th style={th()}>単価</th>
                   <th style={th()}>単位</th>
+                  <th style={th()}></th>
                 </tr>
               </thead>
               <tbody>
                 {preview.items.map((it, idx) => (
                   <tr key={idx}>
-                    <td style={td()}>{it.item_name}</td>
-                    <td style={td()}>{it.origin}</td>
-                    <td style={td()}>{it.spec}</td>
-                    <td style={td()}>{fmtYen(it.unit_price)}</td>
+                    <td style={td()}><input style={{ ...inputStyle(), width: 110 }} value={it.item_name} onChange={(e) => updatePreviewItem(idx, { item_name: e.target.value })} /></td>
+                    <td style={td()}><input style={{ ...inputStyle(), width: 70 }} value={it.origin} onChange={(e) => updatePreviewItem(idx, { origin: e.target.value })} /></td>
+                    <td style={td()}><input style={{ ...inputStyle(), width: 70 }} value={it.spec} onChange={(e) => updatePreviewItem(idx, { spec: e.target.value })} /></td>
+                    <td style={td()}><input style={{ ...inputStyle(), width: 80 }} value={it.unit_price ?? ""} onChange={(e) => updatePreviewItem(idx, { unit_price: e.target.value ? parseFloat(e.target.value) : null })} /></td>
                     <td style={td()}>
                       <input
                         value={it.price_unit}
                         onChange={(e) => updatePreviewItem(idx, { price_unit: e.target.value })}
-                        placeholder="kg/本/尾..."
-                        style={{ ...inputStyle(), width: 70, background: it.price_unit ? "#fff" : T.warnBg }}
+                        placeholder="kg/枚/尾..."
+                        style={{ ...inputStyle(), width: 60, background: it.price_unit ? "#fff" : T.warnBg }}
                       />
                     </td>
+                    <td style={td()}><button style={{ ...btn(), padding: "4px 8px" }} onClick={() => removePreviewItem(idx)}>削除</button></td>
                   </tr>
                 ))}
               </tbody>
@@ -337,12 +317,12 @@ function ManuscriptPanel({ date, items, loading, onSaved }) {
           </div>
           {preview.skippedLines.length > 0 && (
             <details style={{ marginTop: 8, fontSize: 12, color: T.textSub }}>
-              <summary>価格未確定のため取り込まなかった行（{preview.skippedLines.length}件）</summary>
+              <summary>自動抽出できなかった行・特殊フォーマット（{preview.skippedLines.length}件、手動で確認してください）</summary>
               <pre style={{ whiteSpace: "pre-wrap" }}>{preview.skippedLines.join("\n")}</pre>
             </details>
           )}
           <div style={{ marginTop: 12 }}>
-            <button style={btn(true)} disabled={saving} onClick={saveManuscript}>
+            <button style={btn(true)} disabled={saving || preview.items.length === 0} onClick={saveManuscript}>
               {saving ? "保存中..." : `この${preview.items.length}件を原稿として保存`}
             </button>
           </div>

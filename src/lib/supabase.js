@@ -1,9 +1,9 @@
 // Supabase REST APIクライアント（UMAMI stockと同じ「素のfetchでPostgRESTを叩く」方式に合わせている）。
 //
-// TODO: Supabaseプロジェクト作成後、Project Settings → API から
-//       Project URL と anon public key を取得してここに設定してください。
-export const SUPABASE_URL = "__SUPABASE_URL__"; // 例: https://xxxxxxxx.supabase.co
-export const SUPABASE_KEY = "__SUPABASE_ANON_KEY__";
+// 注意: テーブルがまだ無い場合は、Supabase の SQL Editor で supabase/schema.sql を
+//       実行してください（anon keyだけではテーブル作成はできません）。
+export const SUPABASE_URL = "https://eorizndfnvgikuzewwfs.supabase.co";
+export const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVvcml6bmRmbnZnaWt1emV3d2ZzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk2NDQ3MjUsImV4cCI6MjEwNTIyMDcyNX0.cf4-IcCeGO4syO_0yiCV5n6Aa-OpuoQorelLbFTOYZ0";
 
 export function isSupabaseConfigured() {
   return !SUPABASE_URL.includes("__") && !SUPABASE_KEY.includes("__");
