@@ -7,6 +7,7 @@ import {
   comparePrice,
   buildInvoiceTotals,
   isSameDayCategory,
+  DELIVERY_CATEGORY_LABELS,
 } from "./lib/pricing";
 
 // ---- テーマ（UMAMI stockと近い配色に合わせた最小限のインラインスタイル） ----
@@ -645,10 +646,6 @@ function OrdersPanel({ date, orderLines, manuscriptItems, manuscriptItemById, on
       {showBulkForm && (
         <section style={card()}>
           <h3 style={h3()}>発送リストを貼り付け</h3>
-          <p style={{ fontSize: 12, color: T.textSub }}>
-            LINE等で共有される「🚚 発送リスト」形式のテキストをそのまま貼り付けてください。
-            【当日分】【宅急便分】の見出し、発送先・発送方法・納品日・注文内容(◾️...)を自動で読み取ります。
-          </p>
           <textarea style={{ width: "100%", fontFamily: "monospace", fontSize: 12, padding: 8, border: `1px solid ${T.border}`, borderRadius: 6 }} rows={10} value={bulkText} onChange={(e) => setBulkText(e.target.value)} />
           <div style={{ marginTop: 8 }}>
             <button style={btn(true)} onClick={handleBulkParse}>解析する</button>

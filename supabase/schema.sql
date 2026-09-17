@@ -111,3 +111,14 @@ alter table manuscript_items disable row level security;
 alter table order_lines disable row level security;
 alter table invoices disable row level security;
 alter table invoice_line_items disable row level security;
+
+-- 権限付与: RLSを無効化しても、anon/authenticatedロールに明示的なGRANTが無いと
+-- 「permission denied for table ...」になることがあるため、ここで付与しておく。
+grant usage on schema public to anon, authenticated;
+grant select, insert, update, delete on
+  manuscript_batches,
+  manuscript_items,
+  order_lines,
+  invoices,
+  invoice_line_items
+to anon, authenticated;
