@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { db, isSupabaseConfigured } from "./lib/supabase";
 import { extractKadokuraManuscriptItems } from "./lib/manuscriptKadokura";
+import { parseShippingList } from "./lib/shippingList";
 import {
   calcLineAmount,
   comparePrice,
@@ -56,7 +57,8 @@ function nextLineCode(dateStr, existingCodesForDate) {
 }
 
 const BLANK_NEW_LINE = {
-  delivery_datetime: "",
+  delivery_date: "",
+  delivery_time_note: "",
   destination: "",
   item_name: "",
   origin: "",
@@ -397,44 +399,14 @@ function btn(primary) {
 }
 
 /* ============================= 発注一覧 ============================= */
-const DELIVERY_CATEGORY_TEXT_MAP = {
-  "航空便": "air", "当日航空便": "air",
-  "配送便": "ground", "当日配送便": "ground",
-  "宅急便": "takkyu", "翌日宅急便": "takkyu", "翌日着宅急便": "takkyu", "翌日着": "takkyu",
-};
-
-function parseBulkOrderText(text, date) {
-  return text
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter(Boolean)
-    .map((line) => {
-      const cols = line.split("\t").map((c) => c.trim());
-      const [deliveryDatetime, destination, itemName, origin, quantity, quantityUnit, weight, requestNote, categoryText, shipDate, arrivalDate] = cols;
-      return {
-        order_date: date,
-        delivery_datetime: deliveryDatetime || null,
-        destination: destination || "",
-        item_name: itemName || "",
-        origin: origin || "",
-        quantity: quantity ? parseFloat(quantity) : null,
-        quantity_unit: quantityUnit || "本",
-        weight: weight || "",
-        request_note: requestNote || "",
-        delivery_category: DELIVERY_CATEGORY_TEXT_MAP[categoryText] || "ground",
-        takkyu_ship_date: shipDate || null,
-        takkyu_arrival_date: arrivalDate || null,
-      };
-    })
-    .filter((r) => r.item_name);
-}
-
 function OrdersPanel({ date, orderLines, manuscriptItems, manuscriptItemById, onChanged }) {
   const [localLines, setLocalLines] = useState(orderLines);
   const [showAddForm, setShowAddForm] = useState(false);
   const [newLine, setNewLine] = useState(BLANK_NEW_LINE);
   const [showBulkForm, setShowBulkForm] = useState(false);
   const [bulkText, setBulkText] = useState("");
+  const [bulkPreview, setBulkPreview] = useState(null); // { rows, warnings }
+  const [bulkIncluded, setBulkIncluded] = useState({});
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -466,7 +438,7 @@ function OrdersPanel({ date, orderLines, manuscriptItems, manuscriptItemById, on
         order_date: date,
         line_code,
         quantity: newLine.quantity ? parseFloat(newLine.quantity) : null,
-        delivery_datetime: newLine.delivery_datetime || null,
+        delivery_date: newLine.delivery_date || null,
         takkyu_ship_date: newLine.takkyu_ship_date || null,
         takkyu_arrival_date: newLine.takkyu_arrival_date || null,
       });
@@ -480,8 +452,18 @@ function OrdersPanel({ date, orderLines, manuscriptItems, manuscriptItemById, on
     }
   };
 
-  const addBulk = async () => {
-    const rows = parseBulkOrderText(bulkText, date);
+  const handleBulkParse = () => {
+    if (!bulkText.trim()) return;
+    const { rows, warnings } = parseShippingList(bulkText, date);
+    setBulkPreview({ rows, warnings });
+    const inc = {};
+    rows.forEach((_, i) => { inc[i] = true; });
+    setBulkIncluded(inc);
+  };
+
+  const commitBulk = async () => {
+    if (!bulkPreview) return;
+    const rows = bulkPreview.rows.filter((_, i) => bulkIncluded[i]);
     if (rows.length === 0) return;
     setBusy(true);
     setErr("");
@@ -490,10 +472,11 @@ function OrdersPanel({ date, orderLines, manuscriptItems, manuscriptItemById, on
       const withCodes = rows.map((r) => {
         const code = nextLineCode(date, existingCodes);
         existingCodes.push(code);
-        return { ...r, line_code: code };
+        return { ...r, order_date: date, line_code: code };
       });
       await db.insertMany("order_lines", withCodes);
       setBulkText("");
+      setBulkPreview(null);
       setShowBulkForm(false);
       onChanged();
     } catch (e) {
@@ -639,7 +622,8 @@ function OrdersPanel({ date, orderLines, manuscriptItems, manuscriptItemById, on
             <input style={inputStyle()} placeholder="目方(例:1.5kg)" value={newLine.weight} onChange={(e) => setNewLine((n) => ({ ...n, weight: e.target.value }))} />
             <input style={inputStyle()} placeholder="要望" value={newLine.request_note} onChange={(e) => setNewLine((n) => ({ ...n, request_note: e.target.value }))} />
             <input style={inputStyle()} placeholder="納品先" value={newLine.destination} onChange={(e) => setNewLine((n) => ({ ...n, destination: e.target.value }))} />
-            <input type="datetime-local" style={inputStyle()} value={newLine.delivery_datetime} onChange={(e) => setNewLine((n) => ({ ...n, delivery_datetime: e.target.value }))} />
+            <input type="date" style={inputStyle()} value={newLine.delivery_date} onChange={(e) => setNewLine((n) => ({ ...n, delivery_date: e.target.value }))} />
+            <input style={{ ...inputStyle(), width: 90 }} placeholder="時間帯(午前中等)" value={newLine.delivery_time_note} onChange={(e) => setNewLine((n) => ({ ...n, delivery_time_note: e.target.value }))} />
             <select style={inputStyle()} value={newLine.delivery_category} onChange={(e) => setNewLine((n) => ({ ...n, delivery_category: e.target.value }))}>
               <option value="air">当日・航空便</option>
               <option value="ground">当日・配送便</option>
@@ -660,15 +644,61 @@ function OrdersPanel({ date, orderLines, manuscriptItems, manuscriptItemById, on
 
       {showBulkForm && (
         <section style={card()}>
-          <h3 style={h3()}>一括貼り付け（タブ区切り）</h3>
+          <h3 style={h3()}>発送リストを貼り付け</h3>
           <p style={{ fontSize: 12, color: T.textSub }}>
-            列の順番: 納品日時 / 納品先 / 品目 / 産地 / 数量 / 数量単位 / 目方 / 要望 / 配送区分(航空便・配送便・宅急便) / 宅急便発送日 / 宅急便着日
-            <br />※実際の発注リストの形式が分かれば、それに合わせた専用インポートに変更できます。
+            LINE等で共有される「🚚 発送リスト」形式のテキストをそのまま貼り付けてください。
+            【当日分】【宅急便分】の見出し、発送先・発送方法・納品日・注文内容(◾️...)を自動で読み取ります。
           </p>
-          <textarea style={{ width: "100%", fontFamily: "monospace", fontSize: 12, padding: 8, border: `1px solid ${T.border}`, borderRadius: 6 }} rows={6} value={bulkText} onChange={(e) => setBulkText(e.target.value)} />
+          <textarea style={{ width: "100%", fontFamily: "monospace", fontSize: 12, padding: 8, border: `1px solid ${T.border}`, borderRadius: 6 }} rows={10} value={bulkText} onChange={(e) => setBulkText(e.target.value)} />
           <div style={{ marginTop: 8 }}>
-            <button style={btn(true)} disabled={busy} onClick={addBulk}>一括追加</button>
+            <button style={btn(true)} onClick={handleBulkParse}>解析する</button>
           </div>
+
+          {bulkPreview && (
+            <div style={{ marginTop: 16 }}>
+              {bulkPreview.warnings.length > 0 && (
+                <div style={{ color: T.warn, fontSize: 12, marginBottom: 8 }}>
+                  {bulkPreview.warnings.map((w, i) => <div key={i}>⚠️ {w}</div>)}
+                </div>
+              )}
+              <h4 style={{ fontSize: 13, margin: "8px 0" }}>抽出結果プレビュー — {bulkPreview.rows.length}件（内容を確認してから追加してください）</h4>
+              <div style={{ overflowX: "auto" }}>
+                <table style={table()}>
+                  <thead>
+                    <tr>
+                      <th style={th()}>含める</th>
+                      <th style={th()}>納品先</th>
+                      <th style={th()}>品目</th>
+                      <th style={th()}>産地</th>
+                      <th style={th()}>数量</th>
+                      <th style={th()}>要望</th>
+                      <th style={th()}>区分</th>
+                      <th style={th()}>納品日</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {bulkPreview.rows.map((r, i) => (
+                      <tr key={i}>
+                        <td style={td()}><input type="checkbox" checked={!!bulkIncluded[i]} onChange={(e) => setBulkIncluded((prev) => ({ ...prev, [i]: e.target.checked }))} /></td>
+                        <td style={td()}>{r.destination}</td>
+                        <td style={td()}>{r.item_name}</td>
+                        <td style={td()}>{r.origin}</td>
+                        <td style={td()}>{r.quantity ?? ""}{r.quantity_unit}</td>
+                        <td style={td()}>{r.request_note}</td>
+                        <td style={td()}>{DELIVERY_CATEGORY_LABELS[r.delivery_category]}</td>
+                        <td style={td()}>{r.delivery_date}{r.delivery_time_note ? ` ${r.delivery_time_note}` : ""}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div style={{ marginTop: 8 }}>
+                <button style={btn(true)} disabled={busy} onClick={commitBulk}>
+                  {busy ? "追加中..." : `選択した${Object.values(bulkIncluded).filter(Boolean).length}件を発注一覧に追加`}
+                </button>
+              </div>
+            </div>
+          )}
         </section>
       )}
 

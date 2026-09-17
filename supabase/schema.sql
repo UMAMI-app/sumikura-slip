@@ -6,7 +6,7 @@
 create table if not exists manuscript_batches (
   id uuid primary key default gen_random_uuid(),
   manuscript_date date not null default current_date,
-  source_type text not null default 'numbers_file', -- 'numbers_file' | 'paste'
+  source_type text not null default 'kadokura_paste', -- 現状は角倉タブ形式の貼り付けのみ
   source_filename text,
   raw_grid_text text, -- TSV化した原稿全文（再解析・デバッグ用に保持）
   created_at timestamptz not null default now()
@@ -31,7 +31,8 @@ create table if not exists order_lines (
   id uuid primary key default gen_random_uuid(),
   line_code text unique,                    -- 表示用の発注行ID（例: 20260917-001）
   order_date date not null default current_date,
-  delivery_datetime timestamptz,            -- 納品日時
+  delivery_date date,                       -- 納品日
+  delivery_time_note text default '',       -- 納品時間帯の自由記述（例: 午前中）
   destination text not null default '',     -- 納品先
   item_name text not null,
   origin text default '',
