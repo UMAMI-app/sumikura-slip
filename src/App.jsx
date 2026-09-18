@@ -412,7 +412,7 @@ function combinedQtyText(line) {
 
 // 数量と単位をまとめて1つの入力欄で編集する（例:「10 尾」「1.5 kg」）。
 // フォーカスを外した時に、先頭の数値部分と残りの単位部分に分解して保存する。
-function QtyInput({ line, patchLocal, saveField, fontSize }) {
+function QtyInput({ line, patchLocal, saveField, fontSize, width }) {
   const [text, setText] = useState(combinedQtyText(line));
 
   useEffect(() => {
@@ -430,7 +430,7 @@ function QtyInput({ line, patchLocal, saveField, fontSize }) {
 
   return (
     <input
-      style={{ ...inputStyle(), width: 90, fontSize: fontSize || 16 }}
+      style={{ ...inputStyle(), width: width || 90, fontSize: fontSize || 16 }}
       placeholder="例: 10尾"
       value={text}
       onChange={(e) => setText(e.target.value)}
@@ -571,13 +571,13 @@ function OrdersPanel({ date, orderLines, onChanged }) {
             style={{ width: 26, height: 64, accentColor: "red", cursor: "pointer" }}
           />
         </td>
-        <td style={{ ...td(), minWidth: 160, borderBottom: "none" }}>
-          <input style={{ ...inputStyle(), width: "100%", minWidth: 160, fontSize: rowFontSize }} value={line.item_name || ""} onChange={(e) => patchLocal(line.id, { item_name: e.target.value })} onBlur={(e) => saveField(line.id, { item_name: e.target.value })} />
-          <input style={{ ...inputStyle(), width: "100%", minWidth: 160, marginTop: 4, fontSize: rowFontSize, color: T.textSub }} placeholder="産地" value={line.origin || ""} onChange={(e) => patchLocal(line.id, { origin: e.target.value })} onBlur={(e) => saveField(line.id, { origin: e.target.value })} />
+        <td style={{ ...td(), minWidth: 220, borderBottom: "none" }}>
+          <input style={{ ...inputStyle(), width: "100%", minWidth: 220, fontSize: rowFontSize }} value={line.item_name || ""} onChange={(e) => patchLocal(line.id, { item_name: e.target.value })} onBlur={(e) => saveField(line.id, { item_name: e.target.value })} />
+          <input style={{ ...inputStyle(), width: "100%", minWidth: 220, marginTop: 4, fontSize: rowFontSize, color: T.textSub }} placeholder="産地" value={line.origin || ""} onChange={(e) => patchLocal(line.id, { origin: e.target.value })} onBlur={(e) => saveField(line.id, { origin: e.target.value })} />
         </td>
         <td style={{ ...td(), borderBottom: "none" }}>
-          <QtyInput line={line} patchLocal={patchLocal} saveField={saveField} fontSize={rowFontSize} />
-          <input style={{ ...inputStyle(), width: 90, marginTop: 4, fontSize: rowFontSize }} placeholder="実目方" value={line.actual_weight ?? ""} onChange={(e) => patchLocal(line.id, { actual_weight: e.target.value })} onBlur={(e) => saveField(line.id, { actual_weight: e.target.value ? parseFloat(e.target.value) : null })} />
+          <QtyInput line={line} patchLocal={patchLocal} saveField={saveField} fontSize={rowFontSize} width={45} />
+          <input style={{ ...inputStyle(), width: 45, marginTop: 4, fontSize: rowFontSize }} placeholder="実目方" value={line.actual_weight ?? ""} onChange={(e) => patchLocal(line.id, { actual_weight: e.target.value })} onBlur={(e) => saveField(line.id, { actual_weight: e.target.value ? parseFloat(e.target.value) : null })} />
         </td>
         <td style={{ ...td(), borderBottom: "none" }}>
           <button style={{ ...btn(), padding: "4px 8px" }} onClick={() => deleteLine(line.id)}>削除</button>
@@ -624,7 +624,7 @@ function OrdersPanel({ date, orderLines, onChanged }) {
               {groupByDestination(lines).map(({ destName, destLines }, gi) => (
                 <Fragment key={destName}>
                   <tr>
-                    <td colSpan={4} style={{ padding: gi === 0 ? "10px 8px 6px" : "26px 8px 6px", fontWeight: 700, fontSize: 15, borderBottom: `1px solid ${T.border}` }}>
+                    <td colSpan={4} style={{ padding: gi === 0 ? "10px 8px 6px" : "18px 8px 6px", fontWeight: 700, fontSize: 15, borderBottom: `1px solid ${T.border}` }}>
                       {destName}
                     </td>
                   </tr>
