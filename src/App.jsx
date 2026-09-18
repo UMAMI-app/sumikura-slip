@@ -578,7 +578,7 @@ function OrdersPanel({ date, orderLines, onChanged }) {
         </td>
         <td style={{ ...td(), borderBottom: "none", paddingBottom: 4 }}>
           <QtyInput line={line} patchLocal={patchLocal} saveField={saveField} fontSize={rowFontSize} width="100%" />
-          <input style={{ ...inputStyle(), width: "100%", marginTop: 4, fontSize: rowFontSize }} placeholder="実目方" value={line.actual_weight ?? ""} onChange={(e) => patchLocal(line.id, { actual_weight: e.target.value })} onBlur={(e) => saveField(line.id, { actual_weight: e.target.value ? parseFloat(e.target.value) : null })} />
+          <input style={{ ...inputStyle(), width: "100%", marginTop: 4, fontSize: rowFontSize }} placeholder="目方" value={line.actual_weight ?? ""} onChange={(e) => patchLocal(line.id, { actual_weight: e.target.value })} onBlur={(e) => saveField(line.id, { actual_weight: e.target.value ? parseFloat(e.target.value) : null })} />
         </td>
       </tr>
       <tr>
@@ -627,9 +627,9 @@ function OrdersPanel({ date, orderLines, onChanged }) {
         <div style={{ overflowX: "hidden" }}>
           <table style={{ ...table(), tableLayout: "fixed" }}>
             <colgroup>
-              <col style={{ width: "8%" }} />
-              <col style={{ width: "77%" }} />
-              <col style={{ width: "15%" }} />
+              <col style={{ width: "10%" }} />
+              <col style={{ width: "70%" }} />
+              <col style={{ width: "20%" }} />
             </colgroup>
             <tbody>
               {groupByDestination(lines).map(({ destName, destLines }, gi) => (
