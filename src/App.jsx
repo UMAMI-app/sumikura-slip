@@ -563,7 +563,6 @@ function OrdersPanel({ date, orderLines, onChanged }) {
         <input type="checkbox" checked={!!line.shipped_checked} onChange={(e) => { patchLocal(line.id, { shipped_checked: e.target.checked }); saveField(line.id, { shipped_checked: e.target.checked }); }} />
       </td>
       <td style={td()}>
-        <div style={{ fontSize: 11, color: T.textSub }}>{line.line_code}</div>
         <input style={{ ...inputStyle(), width: 110 }} value={line.item_name || ""} onChange={(e) => patchLocal(line.id, { item_name: e.target.value })} onBlur={(e) => saveField(line.id, { item_name: e.target.value })} />
         <input style={{ ...inputStyle(), width: 110, marginTop: 4, fontSize: 12, color: T.textSub }} placeholder="産地" value={line.origin || ""} onChange={(e) => patchLocal(line.id, { origin: e.target.value })} onBlur={(e) => saveField(line.id, { origin: e.target.value })} />
       </td>
@@ -758,7 +757,6 @@ function PriceCheckPanel({ date, orderLines, manuscriptItems, manuscriptItemById
     return (
       <tr key={line.id} style={{ background: cmp.status === "up" ? T.warnBg : "transparent" }}>
         <td style={td()}>
-          <div style={{ fontSize: 11, color: T.textSub }}>{line.line_code}</div>
           {line.item_name}
           {line.origin && <div style={{ fontSize: 11, color: T.textSub }}>{line.origin}</div>}
         </td>
