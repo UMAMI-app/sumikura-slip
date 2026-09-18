@@ -9,7 +9,7 @@ const raw = readFileSync(path.join(__dirname, 'sample_shipping.txt'), 'utf-8');
 
 const { rows, warnings } = parseShippingList(raw, '2026-09-17');
 assert.equal(warnings.length, 0);
-assert.equal(rows.length, 15); // 7件の品目 + 8件の送料
+assert.equal(rows.length, 13); // 15件中、航空便2件分の送料行を除外して13件
 
 const destinations = [...new Set(rows.map((r) => r.destination))];
 assert.equal(destinations.length, 6);
@@ -49,7 +49,8 @@ assert.equal(sengyoSet.quantity, 18000);
 assert.equal(sengyoSet.quantity_unit, '円分');
 assert.ok(sengyoSet.request_note.includes('真鯛以外'));
 
+// 航空便・自社配送の送料行は読み込まない仕様のため、7ブロック中2件（航空便）を除いた5件になる
 const souryouCount = rows.filter((r) => r.item_name.startsWith('送料')).length;
-assert.equal(souryouCount, 7);
+assert.equal(souryouCount, 5);
 
-console.log('OK: shipping list parser matches the real sample (15 rows, 6 destinations)');
+console.log('OK: shipping list parser matches the real sample (13 rows, 6 destinations)');

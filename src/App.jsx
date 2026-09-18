@@ -12,16 +12,16 @@ import {
 
 // ---- テーマ（UMAMI stockと近い配色に合わせた最小限のインラインスタイル） ----
 const T = {
-  green: "#51682a",
+  green: "#1a1a1a",
   bg: "#ffffff",
-  panel: "#f5f5ef",
-  border: "rgba(81,104,42,0.28)",
-  softBorder: "rgba(81,104,42,0.14)",
-  textMain: "#33421c",
-  textSub: "#6b7a52",
-  warn: "#c0392b",
-  warnBg: "#fdecea",
-  ok: "#2e7d32",
+  panel: "#f2f2f2",
+  border: "rgba(0,0,0,0.22)",
+  softBorder: "rgba(0,0,0,0.1)",
+  textMain: "#1a1a1a",
+  textSub: "#666666",
+  warn: "#000000",
+  warnBg: "#e2e2e2",
+  ok: "#1a1a1a",
 };
 
 // ---- 日付ユーティリティ ----
@@ -129,7 +129,6 @@ export default function App() {
   return (
     <div style={{ fontFamily: "system-ui, -apple-system, 'Hiragino Sans', sans-serif", background: T.bg, minHeight: "100vh", color: T.textMain }}>
       <header style={{ padding: "14px 16px", borderBottom: `1px solid ${T.border}`, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12 }}>
-        <h1 style={{ fontSize: 18, margin: 0, color: T.green }}>すみくら伝票（発注・納品管理）</h1>
         <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} style={inputStyle()} />
         <span style={{ fontSize: 12, color: T.textSub }}>
           {selectedDate}（{weekdayJa(selectedDate)}）{" "}
@@ -193,7 +192,7 @@ export default function App() {
 }
 
 function inputStyle() {
-  return { padding: "6px 8px", border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 14 };
+  return { padding: "6px 8px", border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 16 };
 }
 function tabBtnStyle(active) {
   return {
@@ -273,7 +272,7 @@ function ManuscriptPanel({ date, items, loading, onSaved }) {
           onChange={(e) => setPasteText(e.target.value)}
           placeholder={"・白甘鯛\n和歌山\n1.5kg k12,000\n\n・メックリアジ兵庫(二見)\n1.5kg k1,200"}
           rows={10}
-          style={{ width: "100%", fontFamily: "monospace", fontSize: 13, padding: 8, border: `1px solid ${T.border}`, borderRadius: 6 }}
+          style={{ width: "100%", fontFamily: "monospace", fontSize: 16, padding: 8, border: `1px solid ${T.border}`, borderRadius: 6 }}
         />
         <div style={{ marginTop: 8 }}>
           <button style={btn(true)} onClick={handleExtract}>解析する</button>
@@ -473,7 +472,23 @@ function OrdersPanel({ date, orderLines, manuscriptItems, manuscriptItemById, on
       const withCodes = rows.map((r) => {
         const code = nextLineCode(date, existingCodes);
         existingCodes.push(code);
-        return { ...r, order_date: date, line_code: code };
+        // order_lines テーブルに存在する列だけを送る（raw_line等の解析用の補助フィールドは含めない）
+        return {
+          order_date: date,
+          line_code: code,
+          delivery_date: r.delivery_date || null,
+          delivery_time_note: r.delivery_time_note || "",
+          destination: r.destination || "",
+          item_name: r.item_name,
+          origin: r.origin || "",
+          quantity: r.quantity,
+          quantity_unit: r.quantity_unit || "",
+          weight: r.weight || "",
+          request_note: r.request_note || "",
+          delivery_category: r.delivery_category,
+          takkyu_ship_date: r.takkyu_ship_date || null,
+          takkyu_arrival_date: r.takkyu_arrival_date || null,
+        };
       });
       await db.insertMany("order_lines", withCodes);
       setBulkText("");
@@ -646,7 +661,7 @@ function OrdersPanel({ date, orderLines, manuscriptItems, manuscriptItemById, on
       {showBulkForm && (
         <section style={card()}>
           <h3 style={h3()}>発送リストを貼り付け</h3>
-          <textarea style={{ width: "100%", fontFamily: "monospace", fontSize: 12, padding: 8, border: `1px solid ${T.border}`, borderRadius: 6 }} rows={10} value={bulkText} onChange={(e) => setBulkText(e.target.value)} />
+          <textarea style={{ width: "100%", fontFamily: "monospace", fontSize: 16, padding: 8, border: `1px solid ${T.border}`, borderRadius: 6 }} rows={10} value={bulkText} onChange={(e) => setBulkText(e.target.value)} />
           <div style={{ marginTop: 8 }}>
             <button style={btn(true)} onClick={handleBulkParse}>解析する</button>
           </div>

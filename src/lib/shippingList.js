@@ -122,7 +122,7 @@ export function parseShippingList(rawText, referenceDateStr) {
     if (line.startsWith('━')) continue;
     if (line === '発送先') {
       flushDest();
-      dest = { name: '', category: 'ground', deliveryDate: null, deliveryNote: '', shipDate: null, items: [] };
+      dest = { name: '', category: 'ground', methodRaw: '', deliveryDate: null, deliveryNote: '', shipDate: null, items: [] };
       continue;
     }
     if (!dest) continue;
@@ -133,6 +133,7 @@ export function parseShippingList(rawText, referenceDateStr) {
 
     if ((m = line.match(/^発送方法[:：]\s*(.+)$/))) {
       dest.category = classifyCategory(m[1]);
+      dest.methodRaw = m[1];
       continue;
     }
     if ((m = line.match(/^納品日[:：]\s*(\d{1,2})\/(\d{1,2})[（(].+?[)）]\s*(.*)$/))) {
@@ -160,7 +161,9 @@ export function parseShippingList(rawText, referenceDateStr) {
   const rows = [];
   results.forEach((d) => {
     if (!d.name) { warnings.push('納品先が空の発送先ブロックがありました（スキップ）'); return; }
+    const skipShippingFee = /航空便|自社配送/.test(d.methodRaw || '');
     d.items.forEach((it) => {
+      if (skipShippingFee && /^送料/.test(it.item_name || '')) return;
       rows.push({
         destination: d.name,
         delivery_category: d.category,
