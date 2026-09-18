@@ -135,11 +135,11 @@ export default function App() {
         </span>
         <nav style={{ display: "flex", gap: 6, marginLeft: "auto" }}>
           {[
-            ["manuscript", "原稿読み込み"],
-            ["orders", "発注一覧"],
-            ["pricecheck", "価格チェック"],
-            ["invoice", "納品書作成"],
-            ["history", "納品書履歴"],
+            ["manuscript", "原稿"],
+            ["orders", "発注"],
+            ["pricecheck", "チェック"],
+            ["invoice", "納品書"],
+            ["history", "履歴"],
           ].map(([key, label]) => (
             <button key={key} onClick={() => setTab(key)} style={tabBtnStyle(tab === key)}>
               {label}
@@ -203,12 +203,13 @@ function inputStyle() {
 }
 function tabBtnStyle(active) {
   return {
-    padding: "8px 12px",
+    padding: "8px 10px",
     borderRadius: 6,
     border: `1px solid ${active ? T.green : T.border}`,
     background: active ? T.green : "#fff",
     color: active ? "#fff" : T.textMain,
-    fontSize: 13,
+    fontSize: 12,
+    whiteSpace: "nowrap",
     cursor: "pointer",
   };
 }
@@ -562,24 +563,29 @@ function OrdersPanel({ date, orderLines, onChanged }) {
   const renderRow = (line) => (
     <Fragment key={line.id}>
       <tr>
-        <td style={td()}>
-          <input type="checkbox" checked={!!line.shipped_checked} onChange={(e) => { patchLocal(line.id, { shipped_checked: e.target.checked }); saveField(line.id, { shipped_checked: e.target.checked }); }} />
+        <td style={{ ...td(), borderBottom: "none" }}>
+          <input
+            type="checkbox"
+            checked={!!line.shipped_checked}
+            onChange={(e) => { patchLocal(line.id, { shipped_checked: e.target.checked }); saveField(line.id, { shipped_checked: e.target.checked }); }}
+            style={{ width: 26, height: 64, accentColor: "red", cursor: "pointer" }}
+          />
         </td>
-        <td style={{ ...td(), minWidth: 160 }}>
+        <td style={{ ...td(), minWidth: 160, borderBottom: "none" }}>
           <input style={{ ...inputStyle(), width: "100%", minWidth: 160, fontSize: rowFontSize }} value={line.item_name || ""} onChange={(e) => patchLocal(line.id, { item_name: e.target.value })} onBlur={(e) => saveField(line.id, { item_name: e.target.value })} />
           <input style={{ ...inputStyle(), width: "100%", minWidth: 160, marginTop: 4, fontSize: rowFontSize, color: T.textSub }} placeholder="産地" value={line.origin || ""} onChange={(e) => patchLocal(line.id, { origin: e.target.value })} onBlur={(e) => saveField(line.id, { origin: e.target.value })} />
         </td>
-        <td style={td()}>
+        <td style={{ ...td(), borderBottom: "none" }}>
           <QtyInput line={line} patchLocal={patchLocal} saveField={saveField} fontSize={rowFontSize} />
           <input style={{ ...inputStyle(), width: 90, marginTop: 4, fontSize: rowFontSize }} placeholder="実目方" value={line.actual_weight ?? ""} onChange={(e) => patchLocal(line.id, { actual_weight: e.target.value })} onBlur={(e) => saveField(line.id, { actual_weight: e.target.value ? parseFloat(e.target.value) : null })} />
         </td>
-        <td style={td()}>
+        <td style={{ ...td(), borderBottom: "none" }}>
           <button style={{ ...btn(), padding: "4px 8px" }} onClick={() => deleteLine(line.id)}>削除</button>
         </td>
       </tr>
       <tr>
-        <td style={{ ...td(), borderBottom: `1px solid ${T.softBorder}`, paddingTop: 0 }}></td>
-        <td colSpan={2} style={{ ...td(), paddingTop: 0 }}>
+        <td style={{ ...td(), borderBottom: "none", paddingTop: 0, paddingBottom: 16 }}></td>
+        <td colSpan={2} style={{ ...td(), borderBottom: "none", paddingTop: 0, paddingBottom: 16 }}>
           <textarea
             rows={2}
             style={{ ...inputStyle(), width: "100%", fontSize: rowFontSize, lineHeight: 1.4, resize: "vertical", fontFamily: "inherit" }}
@@ -589,7 +595,7 @@ function OrdersPanel({ date, orderLines, onChanged }) {
             onBlur={(e) => saveField(line.id, { request_note: e.target.value })}
           />
         </td>
-        <td style={{ ...td(), paddingTop: 0 }}></td>
+        <td style={{ ...td(), borderBottom: "none", paddingTop: 0, paddingBottom: 16 }}></td>
       </tr>
     </Fragment>
   );
