@@ -29,6 +29,14 @@
 
 import { ORIGIN_NAMES } from './manuscriptKadokura.js';
 
+// 発送先名から「様」「株式会社」を取り除く（発注一覧・価格チェックの見出し表示用に整形する）
+export function cleanDestinationName(name) {
+  return (name || '')
+    .replace(/株式会社/g, '')
+    .replace(/様\s*$/, '')
+    .trim();
+}
+
 const CATEGORY_MAP = [
   { re: /航空便/, category: 'air' },
   { re: /宅急便/, category: 'takkyu' },
@@ -127,7 +135,7 @@ export function parseShippingList(rawText, referenceDateStr) {
     }
     if (!dest) continue;
 
-    if (!dest.name && (m = line.match(/^【(.+)】$/))) { dest.name = m[1]; continue; }
+    if (!dest.name && (m = line.match(/^【(.+)】$/))) { dest.name = cleanDestinationName(m[1]); continue; }
     if (/^〒[\d０-９-]+$/.test(line)) continue; // 郵便番号
     if (/^[\d０-９-]{9,}$/.test(line.replace(/[\s-]/g, '')) && /\d{2,4}-\d{2,4}-\d{3,4}/.test(line)) continue; // 電話番号
 

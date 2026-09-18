@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo, Fragment } from "react";
 import { db, isSupabaseConfigured } from "./lib/supabase";
 import { extractKadokuraManuscriptItems } from "./lib/manuscriptKadokura";
-import { parseShippingList } from "./lib/shippingList";
+import { parseShippingList, cleanDestinationName } from "./lib/shippingList";
 import {
   calcLineAmount,
   comparePrice,
@@ -560,38 +560,38 @@ function OrdersPanel({ date, orderLines, onChanged }) {
   const rowFontSize = 13;
 
   const renderRow = (line) => (
-    <tr key={line.id}>
-      <td style={td()}>
-        <input type="checkbox" checked={!!line.shipped_checked} onChange={(e) => { patchLocal(line.id, { shipped_checked: e.target.checked }); saveField(line.id, { shipped_checked: e.target.checked }); }} />
-      </td>
-      <td style={{ ...td(), minWidth: 160 }}>
-        <input style={{ ...inputStyle(), width: "100%", minWidth: 160, fontSize: rowFontSize }} value={line.item_name || ""} onChange={(e) => patchLocal(line.id, { item_name: e.target.value })} onBlur={(e) => saveField(line.id, { item_name: e.target.value })} />
-        <input style={{ ...inputStyle(), width: "100%", minWidth: 160, marginTop: 4, fontSize: rowFontSize, color: T.textSub }} placeholder="産地" value={line.origin || ""} onChange={(e) => patchLocal(line.id, { origin: e.target.value })} onBlur={(e) => saveField(line.id, { origin: e.target.value })} />
-        <textarea
-          rows={2}
-          style={{ ...inputStyle(), width: "100%", minWidth: 160, marginTop: 4, fontSize: rowFontSize, lineHeight: 1.4, resize: "vertical", fontFamily: "inherit" }}
-          placeholder="要望"
-          value={line.request_note || ""}
-          onChange={(e) => patchLocal(line.id, { request_note: e.target.value })}
-          onBlur={(e) => saveField(line.id, { request_note: e.target.value })}
-        />
-      </td>
-      <td style={td()}>
-        <QtyInput line={line} patchLocal={patchLocal} saveField={saveField} fontSize={rowFontSize} />
-        <input style={{ ...inputStyle(), width: 90, marginTop: 4, fontSize: rowFontSize }} placeholder="実目方" value={line.actual_weight ?? ""} onChange={(e) => patchLocal(line.id, { actual_weight: e.target.value })} onBlur={(e) => saveField(line.id, { actual_weight: e.target.value ? parseFloat(e.target.value) : null })} />
-      </td>
-      <td style={td()}>
-        <button style={{ ...btn(), padding: "4px 8px" }} onClick={() => deleteLine(line.id)}>削除</button>
-      </td>
-    </tr>
-  );
-
-  const theadRow = (
-    <tr>
-      {["✓", "品目", "数量", ""].map((h) => (
-        <th style={th()} key={h}>{h}</th>
-      ))}
-    </tr>
+    <Fragment key={line.id}>
+      <tr>
+        <td style={td()}>
+          <input type="checkbox" checked={!!line.shipped_checked} onChange={(e) => { patchLocal(line.id, { shipped_checked: e.target.checked }); saveField(line.id, { shipped_checked: e.target.checked }); }} />
+        </td>
+        <td style={{ ...td(), minWidth: 160 }}>
+          <input style={{ ...inputStyle(), width: "100%", minWidth: 160, fontSize: rowFontSize }} value={line.item_name || ""} onChange={(e) => patchLocal(line.id, { item_name: e.target.value })} onBlur={(e) => saveField(line.id, { item_name: e.target.value })} />
+          <input style={{ ...inputStyle(), width: "100%", minWidth: 160, marginTop: 4, fontSize: rowFontSize, color: T.textSub }} placeholder="産地" value={line.origin || ""} onChange={(e) => patchLocal(line.id, { origin: e.target.value })} onBlur={(e) => saveField(line.id, { origin: e.target.value })} />
+        </td>
+        <td style={td()}>
+          <QtyInput line={line} patchLocal={patchLocal} saveField={saveField} fontSize={rowFontSize} />
+          <input style={{ ...inputStyle(), width: 90, marginTop: 4, fontSize: rowFontSize }} placeholder="実目方" value={line.actual_weight ?? ""} onChange={(e) => patchLocal(line.id, { actual_weight: e.target.value })} onBlur={(e) => saveField(line.id, { actual_weight: e.target.value ? parseFloat(e.target.value) : null })} />
+        </td>
+        <td style={td()}>
+          <button style={{ ...btn(), padding: "4px 8px" }} onClick={() => deleteLine(line.id)}>削除</button>
+        </td>
+      </tr>
+      <tr>
+        <td style={{ ...td(), borderBottom: `1px solid ${T.softBorder}`, paddingTop: 0 }}></td>
+        <td colSpan={2} style={{ ...td(), paddingTop: 0 }}>
+          <textarea
+            rows={2}
+            style={{ ...inputStyle(), width: "100%", fontSize: rowFontSize, lineHeight: 1.4, resize: "vertical", fontFamily: "inherit" }}
+            placeholder="要望"
+            value={line.request_note || ""}
+            onChange={(e) => patchLocal(line.id, { request_note: e.target.value })}
+            onBlur={(e) => saveField(line.id, { request_note: e.target.value })}
+          />
+        </td>
+        <td style={{ ...td(), paddingTop: 0 }}></td>
+      </tr>
+    </Fragment>
   );
 
   // 店舗（納品先）ごとにグループ化して表示する（発送作業時にどの店舗の分か分かりやすくするため）
@@ -599,7 +599,7 @@ function OrdersPanel({ date, orderLines, onChanged }) {
     const map = new Map();
     const order = [];
     lines.forEach((l) => {
-      const key = l.destination || "（納品先未設定）";
+      const key = cleanDestinationName(l.destination) || "（納品先未設定）";
       if (!map.has(key)) { map.set(key, []); order.push(key); }
       map.get(key).push(l);
     });
@@ -614,7 +614,6 @@ function OrdersPanel({ date, orderLines, onChanged }) {
       ) : (
         <div style={{ overflowX: "auto" }}>
           <table style={table()}>
-            <thead>{theadRow}</thead>
             <tbody>
               {groupByDestination(lines).map(({ destName, destLines }, gi) => (
                 <Fragment key={destName}>
