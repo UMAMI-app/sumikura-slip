@@ -564,7 +564,7 @@ function OrdersPanel({ date, orderLines, onChanged }) {
   const renderRow = (line, isFirst, destName, destLines) => (
     <Fragment key={line.id}>
       <tr>
-        <td style={{ ...td(), borderBottom: "none", width: "14%" }}>
+        <td style={{ ...td(), borderBottom: "none", paddingBottom: 4, width: "14%" }}>
           <input
             type="checkbox"
             checked={!!line.shipped_checked}
@@ -573,25 +573,25 @@ function OrdersPanel({ date, orderLines, onChanged }) {
           />
           {isFirst && (
             <button
-              style={{ ...btn(), width: 26, padding: "2px 0", fontSize: 9, marginTop: 4 }}
+              style={{ ...btn(), width: 26, padding: "2px 0", fontSize: 9, marginTop: 40 }}
               onClick={() => deleteDestinationLines(destName, destLines)}
             >
               削除
             </button>
           )}
         </td>
-        <td style={{ ...td(), width: "56%", borderBottom: "none" }}>
+        <td style={{ ...td(), width: "56%", borderBottom: "none", paddingBottom: 4 }}>
           <input style={{ ...inputStyle(), width: "100%", fontSize: rowFontSize }} value={line.item_name || ""} onChange={(e) => patchLocal(line.id, { item_name: e.target.value })} onBlur={(e) => saveField(line.id, { item_name: e.target.value })} />
           <input style={{ ...inputStyle(), width: "100%", marginTop: 4, fontSize: rowFontSize, color: T.textSub }} placeholder="産地" value={line.origin || ""} onChange={(e) => patchLocal(line.id, { origin: e.target.value })} onBlur={(e) => saveField(line.id, { origin: e.target.value })} />
         </td>
-        <td style={{ ...td(), width: "30%", borderBottom: "none" }}>
+        <td style={{ ...td(), width: "30%", borderBottom: "none", paddingBottom: 4 }}>
           <QtyInput line={line} patchLocal={patchLocal} saveField={saveField} fontSize={rowFontSize} width="100%" />
           <input style={{ ...inputStyle(), width: "100%", marginTop: 4, fontSize: rowFontSize }} placeholder="実目方" value={line.actual_weight ?? ""} onChange={(e) => patchLocal(line.id, { actual_weight: e.target.value })} onBlur={(e) => saveField(line.id, { actual_weight: e.target.value ? parseFloat(e.target.value) : null })} />
         </td>
       </tr>
       <tr>
-        <td style={{ ...td(), borderBottom: "none", paddingTop: 0, paddingBottom: 16 }}></td>
-        <td colSpan={2} style={{ ...td(), borderBottom: "none", paddingTop: 0, paddingBottom: 16 }}>
+        <td style={{ ...td(), borderBottom: "none", paddingTop: 0, paddingBottom: 8 }}></td>
+        <td colSpan={2} style={{ ...td(), borderBottom: "none", paddingTop: 0, paddingBottom: 8 }}>
           <textarea
             rows={2}
             style={{ ...inputStyle(), width: "100%", fontSize: rowFontSize, lineHeight: 1.4, resize: "vertical", fontFamily: "inherit" }}
