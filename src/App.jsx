@@ -560,24 +560,33 @@ function OrdersPanel({ date, orderLines, onChanged }) {
 
   const rowFontSize = 13;
 
-  const renderRow = (line) => (
+  // isFirst の行だけ、チェックボックスの下に「この店舗の発注を削除」ボタンを出す
+  const renderRow = (line, isFirst, destName, destLines) => (
     <Fragment key={line.id}>
       <tr>
-        <td style={{ ...td(), borderBottom: "none" }}>
+        <td style={{ ...td(), borderBottom: "none", width: "14%" }}>
           <input
             type="checkbox"
             checked={!!line.shipped_checked}
             onChange={(e) => { patchLocal(line.id, { shipped_checked: e.target.checked }); saveField(line.id, { shipped_checked: e.target.checked }); }}
-            style={{ width: 26, height: 64, accentColor: "red", cursor: "pointer" }}
+            style={{ width: 26, height: 64, accentColor: "red", cursor: "pointer", display: "block" }}
           />
+          {isFirst && (
+            <button
+              style={{ ...btn(), width: 26, padding: "2px 0", fontSize: 9, marginTop: 4 }}
+              onClick={() => deleteDestinationLines(destName, destLines)}
+            >
+              削除
+            </button>
+          )}
         </td>
-        <td style={{ ...td(), minWidth: 220, borderBottom: "none" }}>
-          <input style={{ ...inputStyle(), width: "100%", minWidth: 220, fontSize: rowFontSize }} value={line.item_name || ""} onChange={(e) => patchLocal(line.id, { item_name: e.target.value })} onBlur={(e) => saveField(line.id, { item_name: e.target.value })} />
-          <input style={{ ...inputStyle(), width: "100%", minWidth: 220, marginTop: 4, fontSize: rowFontSize, color: T.textSub }} placeholder="産地" value={line.origin || ""} onChange={(e) => patchLocal(line.id, { origin: e.target.value })} onBlur={(e) => saveField(line.id, { origin: e.target.value })} />
+        <td style={{ ...td(), width: "56%", borderBottom: "none" }}>
+          <input style={{ ...inputStyle(), width: "100%", fontSize: rowFontSize }} value={line.item_name || ""} onChange={(e) => patchLocal(line.id, { item_name: e.target.value })} onBlur={(e) => saveField(line.id, { item_name: e.target.value })} />
+          <input style={{ ...inputStyle(), width: "100%", marginTop: 4, fontSize: rowFontSize, color: T.textSub }} placeholder="産地" value={line.origin || ""} onChange={(e) => patchLocal(line.id, { origin: e.target.value })} onBlur={(e) => saveField(line.id, { origin: e.target.value })} />
         </td>
-        <td style={{ ...td(), borderBottom: "none" }}>
-          <QtyInput line={line} patchLocal={patchLocal} saveField={saveField} fontSize={rowFontSize} width={45} />
-          <input style={{ ...inputStyle(), width: 45, marginTop: 4, fontSize: rowFontSize }} placeholder="実目方" value={line.actual_weight ?? ""} onChange={(e) => patchLocal(line.id, { actual_weight: e.target.value })} onBlur={(e) => saveField(line.id, { actual_weight: e.target.value ? parseFloat(e.target.value) : null })} />
+        <td style={{ ...td(), width: "30%", borderBottom: "none" }}>
+          <QtyInput line={line} patchLocal={patchLocal} saveField={saveField} fontSize={rowFontSize} width="100%" />
+          <input style={{ ...inputStyle(), width: "100%", marginTop: 4, fontSize: rowFontSize }} placeholder="実目方" value={line.actual_weight ?? ""} onChange={(e) => patchLocal(line.id, { actual_weight: e.target.value })} onBlur={(e) => saveField(line.id, { actual_weight: e.target.value ? parseFloat(e.target.value) : null })} />
         </td>
       </tr>
       <tr>
@@ -614,20 +623,17 @@ function OrdersPanel({ date, orderLines, onChanged }) {
       {lines.length === 0 ? (
         <p style={{ color: T.textSub, fontSize: 13 }}>該当する発注はありません。</p>
       ) : (
-        <div style={{ overflowX: "auto" }}>
-          <table style={table()}>
+        <div style={{ overflowX: "hidden" }}>
+          <table style={{ ...table(), tableLayout: "fixed" }}>
             <tbody>
               {groupByDestination(lines).map(({ destName, destLines }, gi) => (
                 <Fragment key={destName}>
                   <tr>
-                    <td colSpan={3} style={{ padding: gi === 0 ? "10px 8px 6px" : "18px 8px 6px", borderBottom: `1px solid ${T.border}` }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <span style={{ fontWeight: 700, fontSize: 15 }}>{destName}</span>
-                        <button style={{ ...btn(), padding: "4px 8px", fontSize: 12 }} onClick={() => deleteDestinationLines(destName, destLines)}>削除</button>
-                      </div>
+                    <td colSpan={3} style={{ padding: gi === 0 ? "10px 8px 6px" : "18px 8px 6px", fontWeight: 700, fontSize: 15, borderBottom: `1px solid ${T.border}`, wordBreak: "break-word" }}>
+                      {destName}
                     </td>
                   </tr>
-                  {destLines.map(renderRow)}
+                  {destLines.map((line, idx) => renderRow(line, idx === 0, destName, destLines))}
                 </Fragment>
               ))}
             </tbody>
