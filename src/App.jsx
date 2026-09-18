@@ -592,7 +592,7 @@ function OrdersPanel({ date, orderLines, onChanged }) {
             </button>
           )}
         </td>
-        <td colSpan={2} style={{ ...td(), borderBottom: "none", paddingTop: 0, paddingBottom: 8 }}>
+        <td colSpan={2} style={{ ...td(), borderBottom: "none", paddingTop: 0, paddingBottom: 8, paddingLeft: 24 }}>
           <textarea
             rows={2}
             style={{ ...inputStyle(), width: "100%", fontSize: rowFontSize, lineHeight: 1.4, resize: "vertical", fontFamily: "inherit" }}
