@@ -569,18 +569,10 @@ function OrdersPanel({ date, orderLines, onChanged }) {
       </td>
       <td style={td()}>
         <QtyInput line={line} patchLocal={patchLocal} saveField={saveField} />
-      </td>
-      <td style={td()}>
-        <input style={{ ...inputStyle(), width: 60 }} value={line.weight || ""} onChange={(e) => patchLocal(line.id, { weight: e.target.value })} onBlur={(e) => saveField(line.id, { weight: e.target.value })} />
+        <input style={{ ...inputStyle(), width: 90, marginTop: 4 }} placeholder="実目方" value={line.actual_weight ?? ""} onChange={(e) => patchLocal(line.id, { actual_weight: e.target.value })} onBlur={(e) => saveField(line.id, { actual_weight: e.target.value ? parseFloat(e.target.value) : null })} />
       </td>
       <td style={td()}>
         <input style={{ ...inputStyle(), width: 90 }} value={line.request_note || ""} onChange={(e) => patchLocal(line.id, { request_note: e.target.value })} onBlur={(e) => saveField(line.id, { request_note: e.target.value })} />
-      </td>
-      <td style={td()}>
-        <input style={{ ...inputStyle(), width: 55 }} placeholder="実目方" value={line.actual_weight ?? ""} onChange={(e) => patchLocal(line.id, { actual_weight: e.target.value })} onBlur={(e) => saveField(line.id, { actual_weight: e.target.value ? parseFloat(e.target.value) : null })} />
-      </td>
-      <td style={td()}>
-        <input style={{ ...inputStyle(), width: 55 }} placeholder="実数量" value={line.actual_quantity ?? ""} onChange={(e) => patchLocal(line.id, { actual_quantity: e.target.value })} onBlur={(e) => saveField(line.id, { actual_quantity: e.target.value ? parseFloat(e.target.value) : null })} />
       </td>
       <td style={td()}>
         <button style={{ ...btn(), padding: "4px 8px" }} onClick={() => deleteLine(line.id)}>削除</button>
@@ -590,7 +582,7 @@ function OrdersPanel({ date, orderLines, onChanged }) {
 
   const theadRow = (
     <tr>
-      {["✓", "品目", "数量", "目方", "要望", "実目方", "実数量", ""].map((h) => (
+      {["✓", "品目", "数量", "要望", ""].map((h) => (
         <th style={th()} key={h}>{h}</th>
       ))}
     </tr>
