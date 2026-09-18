@@ -391,7 +391,7 @@ function th() {
   return { textAlign: "left", padding: "6px 8px", borderBottom: `2px solid ${T.border}`, color: T.textSub, fontWeight: 600 };
 }
 function td() {
-  return { padding: "6px 8px", borderBottom: `1px solid ${T.softBorder}` };
+  return { padding: "6px 8px", borderBottom: `1px solid ${T.softBorder}`, verticalAlign: "top" };
 }
 function btn(primary) {
   return {
@@ -411,7 +411,7 @@ function combinedQtyText(line) {
 
 // 数量と単位をまとめて1つの入力欄で編集する（例:「10 尾」「1.5 kg」）。
 // フォーカスを外した時に、先頭の数値部分と残りの単位部分に分解して保存する。
-function QtyInput({ line, patchLocal, saveField }) {
+function QtyInput({ line, patchLocal, saveField, fontSize }) {
   const [text, setText] = useState(combinedQtyText(line));
 
   useEffect(() => {
@@ -429,7 +429,7 @@ function QtyInput({ line, patchLocal, saveField }) {
 
   return (
     <input
-      style={{ ...inputStyle(), width: 90 }}
+      style={{ ...inputStyle(), width: 90, fontSize: fontSize || 16 }}
       placeholder="例: 10尾"
       value={text}
       onChange={(e) => setText(e.target.value)}
@@ -557,27 +557,28 @@ function OrdersPanel({ date, orderLines, onChanged }) {
     (grouped[l.delivery_category] || grouped.ground).push(l);
   });
 
+  const rowFontSize = 13;
+
   const renderRow = (line) => (
     <tr key={line.id}>
       <td style={td()}>
         <input type="checkbox" checked={!!line.shipped_checked} onChange={(e) => { patchLocal(line.id, { shipped_checked: e.target.checked }); saveField(line.id, { shipped_checked: e.target.checked }); }} />
       </td>
-      <td style={td()}>
-        <input style={{ ...inputStyle(), width: 110 }} value={line.item_name || ""} onChange={(e) => patchLocal(line.id, { item_name: e.target.value })} onBlur={(e) => saveField(line.id, { item_name: e.target.value })} />
-        <input style={{ ...inputStyle(), width: 110, marginTop: 4, fontSize: 12, color: T.textSub }} placeholder="産地" value={line.origin || ""} onChange={(e) => patchLocal(line.id, { origin: e.target.value })} onBlur={(e) => saveField(line.id, { origin: e.target.value })} />
-      </td>
-      <td style={td()}>
-        <QtyInput line={line} patchLocal={patchLocal} saveField={saveField} />
-        <input style={{ ...inputStyle(), width: 90, marginTop: 4 }} placeholder="実目方" value={line.actual_weight ?? ""} onChange={(e) => patchLocal(line.id, { actual_weight: e.target.value })} onBlur={(e) => saveField(line.id, { actual_weight: e.target.value ? parseFloat(e.target.value) : null })} />
-      </td>
       <td style={{ ...td(), minWidth: 160 }}>
+        <input style={{ ...inputStyle(), width: "100%", minWidth: 160, fontSize: rowFontSize }} value={line.item_name || ""} onChange={(e) => patchLocal(line.id, { item_name: e.target.value })} onBlur={(e) => saveField(line.id, { item_name: e.target.value })} />
+        <input style={{ ...inputStyle(), width: "100%", minWidth: 160, marginTop: 4, fontSize: rowFontSize, color: T.textSub }} placeholder="産地" value={line.origin || ""} onChange={(e) => patchLocal(line.id, { origin: e.target.value })} onBlur={(e) => saveField(line.id, { origin: e.target.value })} />
         <textarea
           rows={2}
-          style={{ ...inputStyle(), width: "100%", minWidth: 160, fontSize: 13, lineHeight: 1.4, resize: "vertical", fontFamily: "inherit" }}
+          style={{ ...inputStyle(), width: "100%", minWidth: 160, marginTop: 4, fontSize: rowFontSize, lineHeight: 1.4, resize: "vertical", fontFamily: "inherit" }}
+          placeholder="要望"
           value={line.request_note || ""}
           onChange={(e) => patchLocal(line.id, { request_note: e.target.value })}
           onBlur={(e) => saveField(line.id, { request_note: e.target.value })}
         />
+      </td>
+      <td style={td()}>
+        <QtyInput line={line} patchLocal={patchLocal} saveField={saveField} fontSize={rowFontSize} />
+        <input style={{ ...inputStyle(), width: 90, marginTop: 4, fontSize: rowFontSize }} placeholder="実目方" value={line.actual_weight ?? ""} onChange={(e) => patchLocal(line.id, { actual_weight: e.target.value })} onBlur={(e) => saveField(line.id, { actual_weight: e.target.value ? parseFloat(e.target.value) : null })} />
       </td>
       <td style={td()}>
         <button style={{ ...btn(), padding: "4px 8px" }} onClick={() => deleteLine(line.id)}>削除</button>
@@ -587,7 +588,7 @@ function OrdersPanel({ date, orderLines, onChanged }) {
 
   const theadRow = (
     <tr>
-      {["✓", "品目", "数量", "要望", ""].map((h) => (
+      {["✓", "品目", "数量", ""].map((h) => (
         <th style={th()} key={h}>{h}</th>
       ))}
     </tr>
@@ -618,7 +619,7 @@ function OrdersPanel({ date, orderLines, onChanged }) {
               {groupByDestination(lines).map(({ destName, destLines }, gi) => (
                 <Fragment key={destName}>
                   <tr>
-                    <td colSpan={5} style={{ padding: gi === 0 ? "10px 8px 6px" : "26px 8px 6px", fontWeight: 700, fontSize: 15, borderBottom: `1px solid ${T.border}` }}>
+                    <td colSpan={4} style={{ padding: gi === 0 ? "10px 8px 6px" : "26px 8px 6px", fontWeight: 700, fontSize: 15, borderBottom: `1px solid ${T.border}` }}>
                       {destName}
                     </td>
                   </tr>
