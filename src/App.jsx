@@ -543,10 +543,10 @@ function OrdersPanel({ date, orderLines, onChanged }) {
     }
   };
 
-  const deleteLine = async (id) => {
-    if (!confirm("この発注行を削除しますか？")) return;
+  const deleteDestinationLines = async (destName, destLines) => {
+    if (!confirm(`${destName} の発注（${destLines.length}件）をすべて削除しますか？`)) return;
     try {
-      await db.remove("order_lines", id);
+      await Promise.all(destLines.map((l) => db.remove("order_lines", l.id)));
       onChanged();
     } catch (e) {
       setErr("削除に失敗しました: " + (e.message || e));
@@ -579,9 +579,6 @@ function OrdersPanel({ date, orderLines, onChanged }) {
           <QtyInput line={line} patchLocal={patchLocal} saveField={saveField} fontSize={rowFontSize} width={45} />
           <input style={{ ...inputStyle(), width: 45, marginTop: 4, fontSize: rowFontSize }} placeholder="実目方" value={line.actual_weight ?? ""} onChange={(e) => patchLocal(line.id, { actual_weight: e.target.value })} onBlur={(e) => saveField(line.id, { actual_weight: e.target.value ? parseFloat(e.target.value) : null })} />
         </td>
-        <td style={{ ...td(), borderBottom: "none" }}>
-          <button style={{ ...btn(), padding: "4px 8px" }} onClick={() => deleteLine(line.id)}>削除</button>
-        </td>
       </tr>
       <tr>
         <td style={{ ...td(), borderBottom: "none", paddingTop: 0, paddingBottom: 16 }}></td>
@@ -595,7 +592,6 @@ function OrdersPanel({ date, orderLines, onChanged }) {
             onBlur={(e) => saveField(line.id, { request_note: e.target.value })}
           />
         </td>
-        <td style={{ ...td(), borderBottom: "none", paddingTop: 0, paddingBottom: 16 }}></td>
       </tr>
     </Fragment>
   );
@@ -624,8 +620,11 @@ function OrdersPanel({ date, orderLines, onChanged }) {
               {groupByDestination(lines).map(({ destName, destLines }, gi) => (
                 <Fragment key={destName}>
                   <tr>
-                    <td colSpan={4} style={{ padding: gi === 0 ? "10px 8px 6px" : "18px 8px 6px", fontWeight: 700, fontSize: 15, borderBottom: `1px solid ${T.border}` }}>
-                      {destName}
+                    <td colSpan={3} style={{ padding: gi === 0 ? "10px 8px 6px" : "18px 8px 6px", borderBottom: `1px solid ${T.border}` }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span style={{ fontWeight: 700, fontSize: 15 }}>{destName}</span>
+                        <button style={{ ...btn(), padding: "4px 8px", fontSize: 12 }} onClick={() => deleteDestinationLines(destName, destLines)}>削除</button>
+                      </div>
                     </td>
                   </tr>
                   {destLines.map(renderRow)}
