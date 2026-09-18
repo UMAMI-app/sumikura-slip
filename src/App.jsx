@@ -543,10 +543,10 @@ function OrdersPanel({ date, orderLines, onChanged }) {
     }
   };
 
-  const deleteDestinationLines = async (destName, destLines) => {
-    if (!confirm(`${destName} の発注（${destLines.length}件）をすべて削除しますか？`)) return;
+  const deleteLine = async (id, label) => {
+    if (!confirm(`「${label || "この発注"}」を削除しますか？`)) return;
     try {
-      await Promise.all(destLines.map((l) => db.remove("order_lines", l.id)));
+      await db.remove("order_lines", id);
       onChanged();
     } catch (e) {
       setErr("削除に失敗しました: " + (e.message || e));
@@ -560,7 +560,7 @@ function OrdersPanel({ date, orderLines, onChanged }) {
 
   const rowFontSize = 13;
 
-  // isFirst の行だけ、チェックボックスの下に「この店舗の発注を削除」ボタンを出す
+  // 各品目ごとに削除ボタンを表示（その行だけを削除）
   const renderRow = (line, isFirst, destName, destLines) => (
     <Fragment key={line.id}>
       <tr>
@@ -583,14 +583,12 @@ function OrdersPanel({ date, orderLines, onChanged }) {
       </tr>
       <tr>
         <td style={{ ...td(), borderBottom: "none", paddingTop: 0, paddingBottom: 8 }}>
-          {isFirst && (
-            <button
-              style={{ ...btn(), width: 26, padding: "2px 0", fontSize: 9 }}
-              onClick={() => deleteDestinationLines(destName, destLines)}
-            >
-              削除
-            </button>
-          )}
+          <button
+            style={{ ...btn(), width: 26, padding: "2px 0", fontSize: 9 }}
+            onClick={() => deleteLine(line.id, line.item_name)}
+          >
+            削除
+          </button>
         </td>
         <td colSpan={2} style={{ ...td(), borderBottom: "none", paddingTop: 0, paddingBottom: 8, paddingLeft: 24 }}>
           <textarea
