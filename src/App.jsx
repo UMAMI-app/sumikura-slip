@@ -571,14 +571,6 @@ function OrdersPanel({ date, orderLines, onChanged }) {
             onChange={(e) => { patchLocal(line.id, { shipped_checked: e.target.checked }); saveField(line.id, { shipped_checked: e.target.checked }); }}
             style={{ width: 26, height: 64, accentColor: "red", cursor: "pointer", display: "block" }}
           />
-          {isFirst && (
-            <button
-              style={{ ...btn(), width: 26, padding: "2px 0", fontSize: 9, marginTop: 40 }}
-              onClick={() => deleteDestinationLines(destName, destLines)}
-            >
-              削除
-            </button>
-          )}
         </td>
         <td style={{ ...td(), width: "56%", borderBottom: "none", paddingBottom: 4 }}>
           <input style={{ ...inputStyle(), width: "100%", fontSize: rowFontSize }} value={line.item_name || ""} onChange={(e) => patchLocal(line.id, { item_name: e.target.value })} onBlur={(e) => saveField(line.id, { item_name: e.target.value })} />
@@ -590,7 +582,16 @@ function OrdersPanel({ date, orderLines, onChanged }) {
         </td>
       </tr>
       <tr>
-        <td style={{ ...td(), borderBottom: "none", paddingTop: 0, paddingBottom: 8 }}></td>
+        <td style={{ ...td(), borderBottom: "none", paddingTop: 0, paddingBottom: 8 }}>
+          {isFirst && (
+            <button
+              style={{ ...btn(), width: 26, padding: "2px 0", fontSize: 9 }}
+              onClick={() => deleteDestinationLines(destName, destLines)}
+            >
+              削除
+            </button>
+          )}
+        </td>
         <td colSpan={2} style={{ ...td(), borderBottom: "none", paddingTop: 0, paddingBottom: 8 }}>
           <textarea
             rows={2}
