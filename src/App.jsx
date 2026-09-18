@@ -13,8 +13,8 @@ import {
 // ---- テーマ（UMAMI stockと近い配色に合わせた最小限のインラインスタイル） ----
 const T = {
   green: "#1a1a1a",
-  bg: "#ffffff",
-  panel: "#f2f2f2",
+  bg: "#f7f7f3",
+  panel: "#ffffff",
   border: "rgba(0,0,0,0.22)",
   softBorder: "rgba(0,0,0,0.1)",
   textMain: "#1a1a1a",
@@ -137,6 +137,7 @@ export default function App() {
           {[
             ["manuscript", "原稿読み込み"],
             ["orders", "発注一覧"],
+            ["pricecheck", "価格チェック"],
             ["invoice", "納品書作成"],
             ["history", "納品書履歴"],
           ].map(([key, label]) => (
@@ -171,6 +172,13 @@ export default function App() {
           <OrdersPanel
             date={selectedDate}
             orderLines={orderLines}
+            onChanged={() => loadOrderLines(selectedDate)}
+          />
+        )}
+        {tab === "pricecheck" && (
+          <PriceCheckPanel
+            date={selectedDate}
+            orderLines={orderLines}
             manuscriptItems={manuscriptItems}
             manuscriptItemById={manuscriptItemById}
             onChanged={() => loadOrderLines(selectedDate)}
@@ -191,7 +199,7 @@ export default function App() {
 }
 
 function inputStyle() {
-  return { padding: "6px 8px", border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 16 };
+  return { padding: "6px 8px", border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 16, background: "#fff", color: T.textMain };
 }
 function tabBtnStyle(active) {
   return {
@@ -397,8 +405,41 @@ function btn(primary) {
   };
 }
 
+function combinedQtyText(line) {
+  return `${line.quantity ?? ""}${line.quantity_unit ? " " + line.quantity_unit : ""}`.trim();
+}
+
+// 数量と単位をまとめて1つの入力欄で編集する（例:「10 尾」「1.5 kg」）。
+// フォーカスを外した時に、先頭の数値部分と残りの単位部分に分解して保存する。
+function QtyInput({ line, patchLocal, saveField }) {
+  const [text, setText] = useState(combinedQtyText(line));
+
+  useEffect(() => {
+    setText(combinedQtyText(line));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [line.quantity, line.quantity_unit]);
+
+  const commit = () => {
+    const m = text.trim().match(/^([\d.]+)?\s*(.*)$/);
+    const quantity = m && m[1] ? parseFloat(m[1]) : null;
+    const quantity_unit = m ? m[2].trim() : "";
+    patchLocal(line.id, { quantity, quantity_unit });
+    saveField(line.id, { quantity, quantity_unit });
+  };
+
+  return (
+    <input
+      style={{ ...inputStyle(), width: 90 }}
+      placeholder="例: 10尾"
+      value={text}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={commit}
+    />
+  );
+}
+
 /* ============================= 発注一覧 ============================= */
-function OrdersPanel({ date, orderLines, manuscriptItems, manuscriptItemById, onChanged }) {
+function OrdersPanel({ date, orderLines, onChanged }) {
   const [localLines, setLocalLines] = useState(orderLines);
   const [showAddForm, setShowAddForm] = useState(false);
   const [newLine, setNewLine] = useState(BLANK_NEW_LINE);
@@ -511,98 +552,53 @@ function OrdersPanel({ date, orderLines, manuscriptItems, manuscriptItemById, on
     }
   };
 
-  const setManuscriptLink = (line, manuscriptItemId) => {
-    patchLocal(line.id, { manuscript_item_id: manuscriptItemId || null, manuscript_price_status: manuscriptItemId ? "linked" : "none" });
-    saveField(line.id, { manuscript_item_id: manuscriptItemId || null, manuscript_price_status: manuscriptItemId ? "linked" : "none" });
-  };
-
   const grouped = { air: [], ground: [], takkyu: [] };
   localLines.forEach((l) => {
     (grouped[l.delivery_category] || grouped.ground).push(l);
   });
 
-  const manuscriptOptions = manuscriptItems
-    .slice()
-    .sort((a, b) => a.item_name.localeCompare(b.item_name, "ja"))
-    .map((it) => ({
-      value: it.id,
-      label: `${it.item_name}（${it.origin || "産地未記載"}）${it.spec ? " " + it.spec : ""} ${fmtYen(it.unit_price)}/${it.price_unit || "?"}`,
-    }));
-
-  const renderRow = (line) => {
-    const mi = line.manuscript_item_id ? manuscriptItemById.get(line.manuscript_item_id) : null;
-    const cmp = comparePrice(mi ? mi.unit_price : null, line.actual_unit_price != null ? Number(line.actual_unit_price) : null);
-    const amountInfo = calcLineAmount({
-      priceUnit: mi ? mi.price_unit : line.actual_unit_price_unit,
-      unitPrice: line.actual_unit_price != null ? Number(line.actual_unit_price) : null,
-      actualWeight: line.actual_weight != null ? Number(line.actual_weight) : null,
-      actualQuantity: line.actual_quantity != null ? Number(line.actual_quantity) : (line.quantity != null ? Number(line.quantity) : null),
-    });
-
-    return (
-      <tr key={line.id} style={{ background: cmp.status === "up" ? T.warnBg : "transparent" }}>
-        <td style={td()}>
-          <input type="checkbox" checked={!!line.shipped_checked} onChange={(e) => { patchLocal(line.id, { shipped_checked: e.target.checked }); saveField(line.id, { shipped_checked: e.target.checked }); }} />
-        </td>
-        <td style={td()}>
-          <div style={{ fontSize: 11, color: T.textSub }}>{line.line_code}</div>
-          <input style={{ ...inputStyle(), width: 90 }} value={line.item_name || ""} onChange={(e) => patchLocal(line.id, { item_name: e.target.value })} onBlur={(e) => saveField(line.id, { item_name: e.target.value })} />
-        </td>
-        <td style={td()}>
-          <input style={{ ...inputStyle(), width: 70 }} value={line.origin || ""} onChange={(e) => patchLocal(line.id, { origin: e.target.value })} onBlur={(e) => saveField(line.id, { origin: e.target.value })} />
-        </td>
-        <td style={td()}>
-          <input style={{ ...inputStyle(), width: 55 }} value={line.quantity ?? ""} onChange={(e) => patchLocal(line.id, { quantity: e.target.value })} onBlur={(e) => saveField(line.id, { quantity: e.target.value ? parseFloat(e.target.value) : null })} />
-          <input style={{ ...inputStyle(), width: 40, marginLeft: 4 }} value={line.quantity_unit || ""} onChange={(e) => patchLocal(line.id, { quantity_unit: e.target.value })} onBlur={(e) => saveField(line.id, { quantity_unit: e.target.value })} />
-        </td>
-        <td style={td()}>
-          <input style={{ ...inputStyle(), width: 60 }} value={line.weight || ""} onChange={(e) => patchLocal(line.id, { weight: e.target.value })} onBlur={(e) => saveField(line.id, { weight: e.target.value })} />
-        </td>
-        <td style={td()}>
-          <input style={{ ...inputStyle(), width: 90 }} value={line.request_note || ""} onChange={(e) => patchLocal(line.id, { request_note: e.target.value })} onBlur={(e) => saveField(line.id, { request_note: e.target.value })} />
-        </td>
-        <td style={td()}>
-          <select style={{ ...inputStyle(), maxWidth: 170 }} value={line.manuscript_item_id || ""} onChange={(e) => setManuscriptLink(line, e.target.value)}>
-            <option value="">―原稿価格なし―</option>
-            {manuscriptOptions.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </select>
-        </td>
-        <td style={td()}>
-          <input style={{ ...inputStyle(), width: 55 }} placeholder="実目方" value={line.actual_weight ?? ""} onChange={(e) => patchLocal(line.id, { actual_weight: e.target.value })} onBlur={(e) => saveField(line.id, { actual_weight: e.target.value ? parseFloat(e.target.value) : null })} />
-        </td>
-        <td style={td()}>
-          <input style={{ ...inputStyle(), width: 55 }} placeholder="実数量" value={line.actual_quantity ?? ""} onChange={(e) => patchLocal(line.id, { actual_quantity: e.target.value })} onBlur={(e) => saveField(line.id, { actual_quantity: e.target.value ? parseFloat(e.target.value) : null })} />
-        </td>
-        <td style={td()}>
-          <input style={{ ...inputStyle(), width: 70 }} placeholder="実単価" value={line.actual_unit_price ?? ""} onChange={(e) => patchLocal(line.id, { actual_unit_price: e.target.value })} onBlur={(e) => saveField(line.id, { actual_unit_price: e.target.value ? parseFloat(e.target.value) : null })} />
-        </td>
-        <td style={td()}>
-          {cmp.status === "up" && <span style={{ color: T.warn, fontWeight: 700 }}>⚠️ +{fmtYen(cmp.diff)}</span>}
-          {cmp.status === "down" && <span style={{ color: T.textSub }}>{fmtYen(cmp.diff)}</span>}
-          {cmp.status === "same" && <span style={{ color: T.ok }}>±0</span>}
-          {cmp.status === "no_manuscript_price" && <span style={{ color: T.textSub }}>―</span>}
-        </td>
-        <td style={td()}>{amountInfo.amount != null ? fmtYen(amountInfo.amount) : ""}</td>
-        <td style={td()}>
-          <button style={{ ...btn(), padding: "4px 8px" }} onClick={() => deleteLine(line.id)}>削除</button>
-        </td>
-      </tr>
-    );
-  };
+  const renderRow = (line) => (
+    <tr key={line.id}>
+      <td style={td()}>
+        <input type="checkbox" checked={!!line.shipped_checked} onChange={(e) => { patchLocal(line.id, { shipped_checked: e.target.checked }); saveField(line.id, { shipped_checked: e.target.checked }); }} />
+      </td>
+      <td style={td()}>
+        <div style={{ fontSize: 11, color: T.textSub }}>{line.line_code}</div>
+        <input style={{ ...inputStyle(), width: 110 }} value={line.item_name || ""} onChange={(e) => patchLocal(line.id, { item_name: e.target.value })} onBlur={(e) => saveField(line.id, { item_name: e.target.value })} />
+        <input style={{ ...inputStyle(), width: 110, marginTop: 4, fontSize: 12, color: T.textSub }} placeholder="産地" value={line.origin || ""} onChange={(e) => patchLocal(line.id, { origin: e.target.value })} onBlur={(e) => saveField(line.id, { origin: e.target.value })} />
+      </td>
+      <td style={td()}>
+        <QtyInput line={line} patchLocal={patchLocal} saveField={saveField} />
+      </td>
+      <td style={td()}>
+        <input style={{ ...inputStyle(), width: 60 }} value={line.weight || ""} onChange={(e) => patchLocal(line.id, { weight: e.target.value })} onBlur={(e) => saveField(line.id, { weight: e.target.value })} />
+      </td>
+      <td style={td()}>
+        <input style={{ ...inputStyle(), width: 90 }} value={line.request_note || ""} onChange={(e) => patchLocal(line.id, { request_note: e.target.value })} onBlur={(e) => saveField(line.id, { request_note: e.target.value })} />
+      </td>
+      <td style={td()}>
+        <input style={{ ...inputStyle(), width: 55 }} placeholder="実目方" value={line.actual_weight ?? ""} onChange={(e) => patchLocal(line.id, { actual_weight: e.target.value })} onBlur={(e) => saveField(line.id, { actual_weight: e.target.value ? parseFloat(e.target.value) : null })} />
+      </td>
+      <td style={td()}>
+        <input style={{ ...inputStyle(), width: 55 }} placeholder="実数量" value={line.actual_quantity ?? ""} onChange={(e) => patchLocal(line.id, { actual_quantity: e.target.value })} onBlur={(e) => saveField(line.id, { actual_quantity: e.target.value ? parseFloat(e.target.value) : null })} />
+      </td>
+      <td style={td()}>
+        <button style={{ ...btn(), padding: "4px 8px" }} onClick={() => deleteLine(line.id)}>削除</button>
+      </td>
+    </tr>
+  );
 
   const theadRow = (
     <tr>
-      {["✓", "品目", "産地", "数量", "目方", "要望", "原稿単価", "実目方", "実数量", "実単価", "差額", "金額", ""].map((h) => (
+      {["✓", "品目", "数量", "目方", "要望", "実目方", "実数量", ""].map((h) => (
         <th style={th()} key={h}>{h}</th>
       ))}
     </tr>
   );
 
-  const renderSection = (label, lines) => (
+  const renderSection = (label, lines, opts = {}) => (
     <section style={card()} key={label}>
-      <h3 style={h3()}>{label}（{lines.length}件）</h3>
+      <h3 style={h3()}>{opts.countOnly ? `${lines.length}件` : `${label}（${lines.length}件）`}</h3>
       {lines.length === 0 ? (
         <p style={{ color: T.textSub, fontSize: 13 }}>該当する発注はありません。</p>
       ) : (
@@ -640,9 +636,9 @@ function OrdersPanel({ date, orderLines, manuscriptItems, manuscriptItemById, on
             <input type="date" style={inputStyle()} value={newLine.delivery_date} onChange={(e) => setNewLine((n) => ({ ...n, delivery_date: e.target.value }))} />
             <input style={{ ...inputStyle(), width: 90 }} placeholder="時間帯(午前中等)" value={newLine.delivery_time_note} onChange={(e) => setNewLine((n) => ({ ...n, delivery_time_note: e.target.value }))} />
             <select style={inputStyle()} value={newLine.delivery_category} onChange={(e) => setNewLine((n) => ({ ...n, delivery_category: e.target.value }))}>
-              <option value="air">当日・航空便</option>
-              <option value="ground">当日・配送便</option>
-              <option value="takkyu">翌日着・宅急便</option>
+              <option value="air">当日・航空便✈️</option>
+              <option value="ground">当日・配送便🚛</option>
+              <option value="takkyu">宅急便📦</option>
             </select>
             {newLine.delivery_category === "takkyu" && (
               <>
@@ -680,7 +676,6 @@ function OrdersPanel({ date, orderLines, manuscriptItems, manuscriptItemById, on
                       <th style={th()}>含める</th>
                       <th style={th()}>納品先</th>
                       <th style={th()}>品目</th>
-                      <th style={th()}>産地</th>
                       <th style={th()}>数量</th>
                       <th style={th()}>要望</th>
                       <th style={th()}>区分</th>
@@ -692,8 +687,10 @@ function OrdersPanel({ date, orderLines, manuscriptItems, manuscriptItemById, on
                       <tr key={i}>
                         <td style={td()}><input type="checkbox" checked={!!bulkIncluded[i]} onChange={(e) => setBulkIncluded((prev) => ({ ...prev, [i]: e.target.checked }))} /></td>
                         <td style={td()}>{r.destination}</td>
-                        <td style={td()}>{r.item_name}</td>
-                        <td style={td()}>{r.origin}</td>
+                        <td style={td()}>
+                          {r.item_name}
+                          {r.origin && <div style={{ fontSize: 11, color: T.textSub }}>{r.origin}</div>}
+                        </td>
                         <td style={td()}>{r.quantity ?? ""}{r.quantity_unit}</td>
                         <td style={td()}>{r.request_note}</td>
                         <td style={td()}>{DELIVERY_CATEGORY_LABELS[r.delivery_category]}</td>
@@ -714,10 +711,110 @@ function OrdersPanel({ date, orderLines, manuscriptItems, manuscriptItemById, on
       )}
 
       <h3 style={{ ...h3(), fontSize: 15, marginTop: 20 }}>当日納品</h3>
-      {renderSection("航空便", grouped.air)}
-      {renderSection("配送便", grouped.ground)}
-      <h3 style={{ ...h3(), fontSize: 15, marginTop: 20 }}>翌日着・宅急便</h3>
-      {renderSection("宅急便", grouped.takkyu)}
+      {renderSection(DELIVERY_CATEGORY_LABELS.air, grouped.air)}
+      {renderSection(DELIVERY_CATEGORY_LABELS.ground, grouped.ground)}
+      <h3 style={{ ...h3(), fontSize: 15, marginTop: 20 }}>{DELIVERY_CATEGORY_LABELS.takkyu}</h3>
+      {renderSection(DELIVERY_CATEGORY_LABELS.takkyu, grouped.takkyu, { countOnly: true })}
+    </div>
+  );
+}
+
+/* ============================= 価格チェック ============================= */
+// 原稿価格の紐付け・実単価の入力・差額確認はここで行う（発送作業時に見る発注一覧とは分離）。
+// 詳細仕様は追って調整予定。今は発注一覧から移設した最小限の機能のみ。
+function PriceCheckPanel({ date, orderLines, manuscriptItems, manuscriptItemById, onChanged }) {
+  const [localLines, setLocalLines] = useState(orderLines);
+  const [err, setErr] = useState("");
+
+  useEffect(() => setLocalLines(orderLines), [orderLines]);
+
+  const patchLocal = (id, patch) => {
+    setLocalLines((prev) => prev.map((l) => (l.id === id ? { ...l, ...patch } : l)));
+  };
+  const saveField = async (id, patch) => {
+    try {
+      await db.update("order_lines", id, patch);
+      onChanged();
+    } catch (e) {
+      setErr("保存に失敗しました: " + (e.message || e));
+    }
+  };
+
+  const setManuscriptLink = (line, manuscriptItemId) => {
+    patchLocal(line.id, { manuscript_item_id: manuscriptItemId || null, manuscript_price_status: manuscriptItemId ? "linked" : "none" });
+    saveField(line.id, { manuscript_item_id: manuscriptItemId || null, manuscript_price_status: manuscriptItemId ? "linked" : "none" });
+  };
+
+  const manuscriptOptions = manuscriptItems
+    .slice()
+    .sort((a, b) => a.item_name.localeCompare(b.item_name, "ja"))
+    .map((it) => ({
+      value: it.id,
+      label: `${it.item_name}（${it.origin || "産地未記載"}）${it.spec ? " " + it.spec : ""} ${fmtYen(it.unit_price)}/${it.price_unit || "?"}`,
+    }));
+
+  const renderRow = (line) => {
+    const mi = line.manuscript_item_id ? manuscriptItemById.get(line.manuscript_item_id) : null;
+    const cmp = comparePrice(mi ? mi.unit_price : null, line.actual_unit_price != null ? Number(line.actual_unit_price) : null);
+    const amountInfo = calcLineAmount({
+      priceUnit: mi ? mi.price_unit : line.actual_unit_price_unit,
+      unitPrice: line.actual_unit_price != null ? Number(line.actual_unit_price) : null,
+      actualWeight: line.actual_weight != null ? Number(line.actual_weight) : null,
+      actualQuantity: line.actual_quantity != null ? Number(line.actual_quantity) : (line.quantity != null ? Number(line.quantity) : null),
+    });
+
+    return (
+      <tr key={line.id} style={{ background: cmp.status === "up" ? T.warnBg : "transparent" }}>
+        <td style={td()}>
+          <div style={{ fontSize: 11, color: T.textSub }}>{line.line_code}</div>
+          {line.item_name}
+          {line.origin && <div style={{ fontSize: 11, color: T.textSub }}>{line.origin}</div>}
+        </td>
+        <td style={td()}>{combinedQtyText(line)}</td>
+        <td style={td()}>
+          <select style={{ ...inputStyle(), maxWidth: 170 }} value={line.manuscript_item_id || ""} onChange={(e) => setManuscriptLink(line, e.target.value)}>
+            <option value="">―原稿価格なし―</option>
+            {manuscriptOptions.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        </td>
+        <td style={td()}>
+          <input style={{ ...inputStyle(), width: 70 }} placeholder="実単価" value={line.actual_unit_price ?? ""} onChange={(e) => patchLocal(line.id, { actual_unit_price: e.target.value })} onBlur={(e) => saveField(line.id, { actual_unit_price: e.target.value ? parseFloat(e.target.value) : null })} />
+        </td>
+        <td style={td()}>
+          {cmp.status === "up" && <span style={{ color: T.warn, fontWeight: 700 }}>⚠️ +{fmtYen(cmp.diff)}</span>}
+          {cmp.status === "down" && <span style={{ color: T.textSub }}>{fmtYen(cmp.diff)}</span>}
+          {cmp.status === "same" && <span style={{ color: T.ok }}>±0</span>}
+          {cmp.status === "no_manuscript_price" && <span style={{ color: T.textSub }}>―</span>}
+        </td>
+        <td style={td()}>{amountInfo.amount != null ? fmtYen(amountInfo.amount) : ""}</td>
+      </tr>
+    );
+  };
+
+  return (
+    <div>
+      <h2 style={h2()}>価格チェック（{date}）</h2>
+      {err && <div style={{ color: T.warn, marginBottom: 12 }}>{err}</div>}
+      <section style={card()}>
+        {localLines.length === 0 ? (
+          <p style={{ color: T.textSub, fontSize: 13 }}>発注はありません。</p>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table style={table()}>
+              <thead>
+                <tr>
+                  {["品目", "数量", "原稿単価", "実単価", "差額", "金額"].map((h) => (
+                    <th style={th()} key={h}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>{localLines.map(renderRow)}</tbody>
+            </table>
+          </div>
+        )}
+      </section>
     </div>
   );
 }

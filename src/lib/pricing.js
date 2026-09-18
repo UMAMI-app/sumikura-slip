@@ -55,7 +55,7 @@ export function isSameDayCategory(deliveryCategory) {
 }
 
 export const DELIVERY_CATEGORY_LABELS = {
-  air: '航空便',
-  ground: '配送便',
-  takkyu: '宅急便',
+  air: '航空便✈️',
+  ground: '配送便🚛',
+  takkyu: '宅急便📦',
 };
