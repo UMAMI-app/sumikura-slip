@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo, Fragment } from "react";
 import { db, isSupabaseConfigured } from "./lib/supabase";
 import { extractKadokuraManuscriptItems } from "./lib/manuscriptKadokura";
 import { parseShippingList } from "./lib/shippingList";
@@ -570,8 +570,14 @@ function OrdersPanel({ date, orderLines, onChanged }) {
         <QtyInput line={line} patchLocal={patchLocal} saveField={saveField} />
         <input style={{ ...inputStyle(), width: 90, marginTop: 4 }} placeholder="実目方" value={line.actual_weight ?? ""} onChange={(e) => patchLocal(line.id, { actual_weight: e.target.value })} onBlur={(e) => saveField(line.id, { actual_weight: e.target.value ? parseFloat(e.target.value) : null })} />
       </td>
-      <td style={td()}>
-        <input style={{ ...inputStyle(), width: 90 }} value={line.request_note || ""} onChange={(e) => patchLocal(line.id, { request_note: e.target.value })} onBlur={(e) => saveField(line.id, { request_note: e.target.value })} />
+      <td style={{ ...td(), minWidth: 160 }}>
+        <textarea
+          rows={2}
+          style={{ ...inputStyle(), width: "100%", minWidth: 160, fontSize: 13, lineHeight: 1.4, resize: "vertical", fontFamily: "inherit" }}
+          value={line.request_note || ""}
+          onChange={(e) => patchLocal(line.id, { request_note: e.target.value })}
+          onBlur={(e) => saveField(line.id, { request_note: e.target.value })}
+        />
       </td>
       <td style={td()}>
         <button style={{ ...btn(), padding: "4px 8px" }} onClick={() => deleteLine(line.id)}>削除</button>
@@ -587,6 +593,18 @@ function OrdersPanel({ date, orderLines, onChanged }) {
     </tr>
   );
 
+  // 店舗（納品先）ごとにグループ化して表示する（発送作業時にどの店舗の分か分かりやすくするため）
+  const groupByDestination = (lines) => {
+    const map = new Map();
+    const order = [];
+    lines.forEach((l) => {
+      const key = l.destination || "（納品先未設定）";
+      if (!map.has(key)) { map.set(key, []); order.push(key); }
+      map.get(key).push(l);
+    });
+    return order.map((destName) => ({ destName, destLines: map.get(destName) }));
+  };
+
   const renderSection = (label, lines, opts = {}) => (
     <section style={card()} key={label}>
       <h3 style={h3()}>{opts.countOnly ? `${lines.length}件` : `${label}（${lines.length}件）`}</h3>
@@ -596,7 +614,18 @@ function OrdersPanel({ date, orderLines, onChanged }) {
         <div style={{ overflowX: "auto" }}>
           <table style={table()}>
             <thead>{theadRow}</thead>
-            <tbody>{lines.map(renderRow)}</tbody>
+            <tbody>
+              {groupByDestination(lines).map(({ destName, destLines }, gi) => (
+                <Fragment key={destName}>
+                  <tr>
+                    <td colSpan={5} style={{ padding: gi === 0 ? "10px 8px 6px" : "26px 8px 6px", fontWeight: 700, fontSize: 15, borderBottom: `1px solid ${T.border}` }}>
+                      {destName}
+                    </td>
+                  </tr>
+                  {destLines.map(renderRow)}
+                </Fragment>
+              ))}
+            </tbody>
           </table>
         </div>
       )}
