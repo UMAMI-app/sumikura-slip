@@ -564,7 +564,7 @@ function OrdersPanel({ date, orderLines, onChanged }) {
   const renderRow = (line, isFirst, destName, destLines) => (
     <Fragment key={line.id}>
       <tr>
-        <td style={{ ...td(), borderBottom: "none", paddingBottom: 4, width: "14%" }}>
+        <td style={{ ...td(), borderBottom: "none", paddingBottom: 4 }}>
           <input
             type="checkbox"
             checked={!!line.shipped_checked}
@@ -572,11 +572,11 @@ function OrdersPanel({ date, orderLines, onChanged }) {
             style={{ width: 26, height: 64, accentColor: "red", cursor: "pointer", display: "block" }}
           />
         </td>
-        <td style={{ ...td(), width: "56%", borderBottom: "none", paddingBottom: 4 }}>
+        <td style={{ ...td(), borderBottom: "none", paddingBottom: 4 }}>
           <input style={{ ...inputStyle(), width: "100%", fontSize: rowFontSize }} value={line.item_name || ""} onChange={(e) => patchLocal(line.id, { item_name: e.target.value })} onBlur={(e) => saveField(line.id, { item_name: e.target.value })} />
           <input style={{ ...inputStyle(), width: "100%", marginTop: 4, fontSize: rowFontSize, color: T.textSub }} placeholder="産地" value={line.origin || ""} onChange={(e) => patchLocal(line.id, { origin: e.target.value })} onBlur={(e) => saveField(line.id, { origin: e.target.value })} />
         </td>
-        <td style={{ ...td(), width: "30%", borderBottom: "none", paddingBottom: 4 }}>
+        <td style={{ ...td(), borderBottom: "none", paddingBottom: 4 }}>
           <QtyInput line={line} patchLocal={patchLocal} saveField={saveField} fontSize={rowFontSize} width="100%" />
           <input style={{ ...inputStyle(), width: "100%", marginTop: 4, fontSize: rowFontSize }} placeholder="実目方" value={line.actual_weight ?? ""} onChange={(e) => patchLocal(line.id, { actual_weight: e.target.value })} onBlur={(e) => saveField(line.id, { actual_weight: e.target.value ? parseFloat(e.target.value) : null })} />
         </td>
@@ -626,6 +626,11 @@ function OrdersPanel({ date, orderLines, onChanged }) {
       ) : (
         <div style={{ overflowX: "hidden" }}>
           <table style={{ ...table(), tableLayout: "fixed" }}>
+            <colgroup>
+              <col style={{ width: "8%" }} />
+              <col style={{ width: "77%" }} />
+              <col style={{ width: "15%" }} />
+            </colgroup>
             <tbody>
               {groupByDestination(lines).map(({ destName, destLines }, gi) => (
                 <Fragment key={destName}>
