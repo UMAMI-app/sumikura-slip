@@ -74,7 +74,7 @@ const BLANK_NEW_LINE = {
 
 export default function App() {
   const [tab, setTab] = useState("orders");
-  const [selectedDate, setSelectedDate] = useState(todayStr());
+  const [selectedDate] = useState(todayStr()); // 発注一覧・原稿読込・納品書作成は常に「今日」を対象にする（過去の振り返りは納品書履歴で行う）
   const [manuscriptBatches, setManuscriptBatches] = useState([]);
   const [manuscriptItems, setManuscriptItems] = useState([]);
   const [orderLines, setOrderLines] = useState([]);
@@ -129,7 +129,6 @@ export default function App() {
   return (
     <div style={{ fontFamily: "system-ui, -apple-system, 'Hiragino Sans', sans-serif", background: T.bg, minHeight: "100vh", color: T.textMain }}>
       <header style={{ padding: "14px 16px", borderBottom: `1px solid ${T.border}`, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12 }}>
-        <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} style={inputStyle()} />
         <span style={{ fontSize: 12, color: T.textSub }}>
           {selectedDate}（{weekdayJa(selectedDate)}）{" "}
           {manuscriptBatches.length > 0 && `原稿${manuscriptBatches.length}件読込済`}
