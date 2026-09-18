@@ -564,7 +564,7 @@ function OrdersPanel({ date, orderLines, onChanged }) {
   const renderRow = (line, isFirst, destName, destLines) => (
     <Fragment key={line.id}>
       <tr>
-        <td style={{ ...td(), borderBottom: "none", paddingBottom: 4 }}>
+        <td style={{ ...td(), borderBottom: "none", paddingBottom: 4, paddingRight: 24 }}>
           <input
             type="checkbox"
             checked={!!line.shipped_checked}
@@ -572,7 +572,7 @@ function OrdersPanel({ date, orderLines, onChanged }) {
             style={{ width: 26, height: 64, accentColor: "red", cursor: "pointer", display: "block" }}
           />
         </td>
-        <td style={{ ...td(), borderBottom: "none", paddingBottom: 4 }}>
+        <td style={{ ...td(), borderBottom: "none", paddingBottom: 4, paddingLeft: 24 }}>
           <input style={{ ...inputStyle(), width: "100%", fontSize: rowFontSize }} value={line.item_name || ""} onChange={(e) => patchLocal(line.id, { item_name: e.target.value })} onBlur={(e) => saveField(line.id, { item_name: e.target.value })} />
           <input style={{ ...inputStyle(), width: "100%", marginTop: 4, fontSize: rowFontSize, color: T.textSub }} placeholder="産地" value={line.origin || ""} onChange={(e) => patchLocal(line.id, { origin: e.target.value })} onBlur={(e) => saveField(line.id, { origin: e.target.value })} />
         </td>
