@@ -470,6 +470,10 @@ function OrdersPanel({ date, orderLines, onChanged }) {
   const [bulkIncluded, setBulkIncluded] = useState({});
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  // 削除確認をブラウザのconfirm()に頼らず画面内で行う（iOSでconfirm/alertを連発すると
+  // 「このページでのダイアログ表示を停止」が働いてしまい、以降ボタンが反応しなくなるため）。
+  // "__ALL__"は全削除ボタン用の特別なID。
+  const [confirmId, setConfirmId] = useState(null);
 
   useEffect(() => setLocalLines(orderLines), [orderLines]);
 
@@ -566,19 +570,27 @@ function OrdersPanel({ date, orderLines, onChanged }) {
   };
 
   const clearAllToday = async () => {
-    if (!confirm(`${date} の発注一覧を全件削除します。よろしいですか？（テスト用の一括削除）`)) return;
+    if (confirmId !== "__ALL__") {
+      setConfirmId("__ALL__");
+      return;
+    }
+    setConfirmId(null);
     try {
       await db.removeWhere("order_lines", `?order_date=eq.${date}`);
       setLocalLines([]);
       onChanged();
     } catch (e) {
-      alert("全削除に失敗しました: " + (e.message || e));
       setErr("全削除に失敗しました: " + (e.message || e));
     }
   };
 
-  const deleteLine = async (id, label) => {
-    if (!confirm(`「${label || "この発注"}」を削除しますか？`)) return;
+  const deleteLine = async (id) => {
+    // 1回目のタップで確認状態にし、同じ行をもう一度タップしたら実削除する（2段階タップ）。
+    if (confirmId !== id) {
+      setConfirmId(id);
+      return;
+    }
+    setConfirmId(null);
     // 即座に画面から消す（サーバー往復や再取得を待たない）。
     // 失敗した場合はonChangedで再取得され、消えていたら元に戻る。
     setLocalLines((prev) => prev.filter((l) => l.id !== id));
@@ -586,7 +598,6 @@ function OrdersPanel({ date, orderLines, onChanged }) {
       await db.remove("order_lines", id);
       onChanged();
     } catch (e) {
-      alert("削除に失敗しました: " + (e.message || e));
       setErr("削除に失敗しました: " + (e.message || e));
       onChanged();
     }
@@ -645,8 +656,22 @@ function OrdersPanel({ date, orderLines, onChanged }) {
             </td>
             <td style={{ ...td(), borderBottom: "none", paddingBottom: 4 }}>
               <QtyInput line={line} patchLocal={patchLocal} saveField={saveField} fontSize={rowFontSize} width="100%" />
-              <input style={{ ...inputStyle(), width: "100%", marginTop: 4, fontSize: rowFontSize }} placeholder="目方" value={line.actual_weight ?? ""} onChange={(e) => patchLocal(line.id, { actual_weight: e.target.value })} onBlur={(e) => saveField(line.id, { actual_weight: e.target.value ? parseFloat(e.target.value) : null })} />
-              <input style={{ ...inputStyle(), width: "60%", marginTop: 4, fontSize: rowFontSize }} placeholder="単位" value={line.actual_weight_unit ?? ""} onChange={(e) => patchLocal(line.id, { actual_weight_unit: e.target.value })} onBlur={(e) => saveField(line.id, { actual_weight_unit: e.target.value })} />
+              <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
+                <input
+                  style={{ ...inputStyle(), padding: "6px 4px", flex: "1 1 auto", minWidth: 0, fontSize: rowFontSize }}
+                  placeholder="目方"
+                  value={line.actual_weight ?? ""}
+                  onChange={(e) => patchLocal(line.id, { actual_weight: e.target.value })}
+                  onBlur={(e) => saveField(line.id, { actual_weight: e.target.value ? parseFloat(e.target.value) : null })}
+                />
+                <input
+                  style={{ ...inputStyle(), padding: "6px 4px", flex: "0 0 32px", width: 32, fontSize: rowFontSize }}
+                  placeholder="kg"
+                  value={line.actual_weight_unit ?? ""}
+                  onChange={(e) => patchLocal(line.id, { actual_weight_unit: e.target.value })}
+                  onBlur={(e) => saveField(line.id, { actual_weight_unit: e.target.value })}
+                />
+              </div>
             </td>
           </>
         )}
@@ -654,10 +679,18 @@ function OrdersPanel({ date, orderLines, onChanged }) {
       <tr>
         <td style={{ ...td(), borderBottom: "none", paddingTop: 0, paddingBottom: 8, textAlign: "center" }}>
           <button
-            style={{ ...btn(), width: "100%", minHeight: 32, padding: "4px 0", fontSize: 10, touchAction: "manipulation" }}
-            onClick={() => deleteLine(line.id, line.item_name)}
+            style={{
+              ...btn(),
+              width: "100%",
+              minHeight: 32,
+              padding: "4px 0",
+              fontSize: 10,
+              touchAction: "manipulation",
+              ...(confirmId === line.id ? { background: T.warn, borderColor: T.warn, color: "#fff" } : {}),
+            }}
+            onClick={() => deleteLine(line.id)}
           >
-            削除
+            {confirmId === line.id ? "確定" : "削除"}
           </button>
         </td>
         <td colSpan={2} style={{ ...td(), borderBottom: "none", paddingTop: 0, paddingBottom: 8, paddingLeft: 24 }}>
@@ -702,8 +735,8 @@ function OrdersPanel({ date, orderLines, onChanged }) {
           <table style={{ ...table(), tableLayout: "fixed" }}>
             <colgroup>
               <col style={{ width: "8%" }} />
-              <col style={{ width: "72%" }} />
-              <col style={{ width: "20%" }} />
+              <col style={{ width: "65%" }} />
+              <col style={{ width: "27%" }} />
             </colgroup>
             <tbody>
               {groupByDestination(lines).map(({ destName, destLines }, gi) => (
@@ -731,7 +764,18 @@ function OrdersPanel({ date, orderLines, onChanged }) {
       <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
         <button style={btn()} onClick={() => setShowAddForm((v) => !v)}>{showAddForm ? "閉じる" : "+ 発注行を1件追加"}</button>
         <button style={btn()} onClick={() => setShowBulkForm((v) => !v)}>{showBulkForm ? "閉じる" : "一括貼り付けで追加"}</button>
-        <button style={{ ...btn(), marginLeft: "auto", color: T.warn, borderColor: T.warn }} onClick={clearAllToday}>本日分を全削除（テスト用）</button>
+        <button
+          style={{
+            ...btn(),
+            marginLeft: "auto",
+            color: confirmId === "__ALL__" ? "#fff" : T.warn,
+            borderColor: T.warn,
+            background: confirmId === "__ALL__" ? T.warn : "#fff",
+          }}
+          onClick={clearAllToday}
+        >
+          {confirmId === "__ALL__" ? "本当に全削除する（もう一度タップ）" : "本日分を全削除（テスト用）"}
+        </button>
       </div>
 
       {showAddForm && (
