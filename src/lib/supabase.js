@@ -35,4 +35,5 @@ export const db = {
   insertMany: (table, rows) => sbFetch(table, { method: "POST", body: rows }),
   update: (table, id, data) => sbFetch(table, { method: "PATCH", params: `?id=eq.${id}`, body: data }),
   remove: (table, id) => sbFetch(table, { method: "DELETE", params: `?id=eq.${id}` }),
+  removeWhere: (table, query) => sbFetch(table, { method: "DELETE", params: query }),
 };

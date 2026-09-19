@@ -562,6 +562,18 @@ function OrdersPanel({ date, orderLines, onChanged }) {
     }
   };
 
+  const clearAllToday = async () => {
+    if (!confirm(`${date} の発注一覧を全件削除します。よろしいですか？（テスト用の一括削除）`)) return;
+    try {
+      await db.removeWhere("order_lines", `?order_date=eq.${date}`);
+      setLocalLines([]);
+      onChanged();
+    } catch (e) {
+      alert("全削除に失敗しました: " + (e.message || e));
+      setErr("全削除に失敗しました: " + (e.message || e));
+    }
+  };
+
   const deleteLine = async (id, label) => {
     if (!confirm(`「${label || "この発注"}」を削除しますか？`)) return;
     // 即座に画面から消す（サーバー往復や再取得を待たない）。
@@ -691,9 +703,10 @@ function OrdersPanel({ date, orderLines, onChanged }) {
       <h2 style={h2()}>発注一覧（{date}）</h2>
       {err && <div style={{ color: T.warn, marginBottom: 12 }}>{err}</div>}
 
-      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+      <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
         <button style={btn()} onClick={() => setShowAddForm((v) => !v)}>{showAddForm ? "閉じる" : "+ 発注行を1件追加"}</button>
         <button style={btn()} onClick={() => setShowBulkForm((v) => !v)}>{showBulkForm ? "閉じる" : "一括貼り付けで追加"}</button>
+        <button style={{ ...btn(), marginLeft: "auto", color: T.warn, borderColor: T.warn }} onClick={clearAllToday}>本日分を全削除（テスト用）</button>
       </div>
 
       {showAddForm && (
