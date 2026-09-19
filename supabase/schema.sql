@@ -36,12 +36,14 @@ create table if not exists order_lines (
   destination text not null default '',     -- 納品先
   item_name text not null,
   origin text default '',
+  spec text default '',                     -- 発注時の規格・サイズ（例: 600g。LINE実績データ取込用）
   quantity numeric,
   quantity_unit text default '本',
   weight text default '',                   -- 目方（自由入力: "1.5kg" 等。数値化できない表記もあるためtext）
   request_note text default '',             -- 要望
   delivery_category text not null default 'ground'
     check (delivery_category in ('air','ground','takkyu')), -- 当日航空便/当日配送便/翌日宅急便
+  ship_date date,                           -- 発送日（配送区分によらず汎用。LINE実績データ取込用）
   takkyu_ship_date date,                    -- 宅急便: 発送日
   takkyu_arrival_date date,                 -- 宅急便: 着日
 
@@ -128,3 +130,8 @@ to anon, authenticated;
 -- 既存のorder_linesテーブルにはcreate table if not existsが効かないため、
 -- 既に運用中のDBでは以下を一度だけ実行してください。
 alter table order_lines add column if not exists actual_weight_unit text default 'kg';
+
+-- マイグレーション: LINE実績データ取込機能の追加(2026-09)。
+-- 既存のorder_linesテーブルには以下を一度だけ実行してください。
+alter table order_lines add column if not exists spec text default '';
+alter table order_lines add column if not exists ship_date date;

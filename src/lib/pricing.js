@@ -22,13 +22,23 @@ function round2(n) {
   return Math.round(n * 100) / 100;
 }
 
-// 原稿単価と実納品単価を比較する（開発指示書15章）。
+// 原稿単価と実納品単価を比較する（開発指示書15章、LINE実績データ追加仕様12〜13章）。
 // 「高くなった場合だけ警告」「安くなった場合は通常表示（強調しない）」。
-export function comparePrice(manuscriptUnitPrice, actualUnitPrice) {
-  if (manuscriptUnitPrice == null || actualUnitPrice == null) {
+// 単位が異なる場合は数値としての単純比較をせず、必ず'unit_mismatch'を返す
+// （例: 原稿¥6,000/kg vs 実績¥3,700/本 は比較不能。ユーザーが比較単位を指定する）。
+// 単位が片方でも空（未入力）の場合は比較を保留し'unit_unknown'を返す
+// （LINEの「仕入 ¥○○」に単位が書かれていないケースを想定。勝手にkgと決めつけない）。
+export function comparePrice({ manuscriptPrice, manuscriptUnit, actualPrice, actualUnit } = {}) {
+  if (manuscriptPrice == null || actualPrice == null) {
     return { status: 'no_manuscript_price', diff: null };
   }
-  const diff = actualUnitPrice - manuscriptUnitPrice;
+  if (!manuscriptUnit || !actualUnit) {
+    return { status: 'unit_unknown', diff: null, manuscriptUnit, actualUnit };
+  }
+  if (manuscriptUnit !== actualUnit) {
+    return { status: 'unit_mismatch', diff: null, manuscriptUnit, actualUnit };
+  }
+  const diff = actualPrice - manuscriptPrice;
   if (diff > 0) return { status: 'up', diff };
   if (diff < 0) return { status: 'down', diff };
   return { status: 'same', diff: 0 };
