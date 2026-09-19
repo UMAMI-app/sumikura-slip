@@ -269,8 +269,6 @@ function ManuscriptPanel({ date, items, loading, onSaved }) {
 
   return (
     <div>
-      <h2 style={h2()}>原稿読み込み（{date}）</h2>
-
       <section style={card()}>
         <h3 style={h3()}>原稿テキストを貼り付け</h3>
         <textarea
