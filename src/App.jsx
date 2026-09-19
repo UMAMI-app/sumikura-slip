@@ -270,9 +270,6 @@ function ManuscriptPanel({ date, items, loading, onSaved }) {
   return (
     <div>
       <h2 style={h2()}>原稿読み込み（{date}）</h2>
-      <p style={{ fontSize: 12, color: T.textSub, marginTop: -6, marginBottom: 12 }}>
-        角倉の原稿テキストを貼り付けてください（案内生成アプリの「角倉」タブと同じ入力形式。磯崎・イチマル・荒木鮮魚は対象外です）。
-      </p>
 
       <section style={card()}>
         <h3 style={h3()}>原稿テキストを貼り付け</h3>
