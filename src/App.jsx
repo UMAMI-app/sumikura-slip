@@ -172,7 +172,7 @@ export default function App() {
           <OrdersPanel
             date={selectedDate}
             orderLines={orderLines}
-            onChanged={() => loadOrderLines(selectedDate)}
+            onChanged={() => loadOrderLines(selectedDate).catch((e) => setGlobalError(e.message || String(e)))}
           />
         )}
         {tab === "pricecheck" && (
@@ -181,7 +181,7 @@ export default function App() {
             orderLines={orderLines}
             manuscriptItems={manuscriptItems}
             manuscriptItemById={manuscriptItemById}
-            onChanged={() => loadOrderLines(selectedDate)}
+            onChanged={() => loadOrderLines(selectedDate).catch((e) => setGlobalError(e.message || String(e)))}
           />
         )}
         {tab === "invoice" && (
@@ -564,11 +564,16 @@ function OrdersPanel({ date, orderLines, onChanged }) {
 
   const deleteLine = async (id, label) => {
     if (!confirm(`「${label || "この発注"}」を削除しますか？`)) return;
+    // 即座に画面から消す（サーバー往復や再取得を待たない）。
+    // 失敗した場合はonChangedで再取得され、消えていたら元に戻る。
+    setLocalLines((prev) => prev.filter((l) => l.id !== id));
     try {
       await db.remove("order_lines", id);
       onChanged();
     } catch (e) {
+      alert("削除に失敗しました: " + (e.message || e));
       setErr("削除に失敗しました: " + (e.message || e));
+      onChanged();
     }
   };
 
@@ -618,7 +623,7 @@ function OrdersPanel({ date, orderLines, onChanged }) {
       <tr>
         <td style={{ ...td(), borderBottom: "none", paddingTop: 0, paddingBottom: 8 }}>
           <button
-            style={{ ...btn(), width: 26, padding: "2px 0", fontSize: 9 }}
+            style={{ ...btn(), width: "100%", minHeight: 32, padding: "4px 0", fontSize: 10, touchAction: "manipulation" }}
             onClick={() => deleteLine(line.id, line.item_name)}
           >
             削除
