@@ -128,12 +128,12 @@ export default function App() {
 
   return (
     <div style={{ fontFamily: "system-ui, -apple-system, 'Hiragino Sans', sans-serif", background: T.bg, minHeight: "100vh", color: T.textMain }}>
-      <header style={{ padding: "14px 16px", borderBottom: `1px solid ${T.border}`, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12 }}>
+      <header style={{ padding: "10px 16px 14px", borderBottom: `1px solid ${T.border}` }}>
         <span style={{ fontSize: 12, color: T.textSub }}>
           {selectedDate}（{weekdayJa(selectedDate)}）{" "}
           {manuscriptBatches.length > 0 && `原稿${manuscriptBatches.length}件読込済`}
         </span>
-        <nav style={{ display: "flex", gap: 6, marginLeft: "auto" }}>
+        <nav style={{ display: "flex", gap: 6, marginTop: 8 }}>
           {[
             ["manuscript", "原稿"],
             ["orders", "発注"],
@@ -141,7 +141,7 @@ export default function App() {
             ["invoice", "納品書"],
             ["history", "履歴"],
           ].map(([key, label]) => (
-            <button key={key} onClick={() => setTab(key)} style={tabBtnStyle(tab === key)}>
+            <button key={key} onClick={() => setTab(key)} style={{ ...tabBtnStyle(tab === key), flex: 1 }}>
               {label}
             </button>
           ))}
@@ -203,13 +203,14 @@ function inputStyle() {
 }
 function tabBtnStyle(active) {
   return {
-    padding: "8px 10px",
+    padding: "9px 4px",
     borderRadius: 6,
     border: `1px solid ${active ? T.green : T.border}`,
     background: active ? T.green : "#fff",
     color: active ? "#fff" : T.textMain,
     fontSize: 12,
     whiteSpace: "nowrap",
+    textAlign: "center",
     cursor: "pointer",
   };
 }
@@ -599,43 +600,61 @@ function OrdersPanel({ date, orderLines, onChanged }) {
   const rowFontSize = 13;
 
   // 各品目ごとに削除ボタンを表示（その行だけを削除）
-  const renderRow = (line, isFirst, destName, destLines) => (
+  const renderRow = (line, isFirst, destName, destLines) => {
+    const isShippingFee = /^送料/.test(line.item_name || "");
+    return (
     <Fragment key={line.id}>
       <tr>
-        <td style={{ ...td(), borderBottom: "none", paddingBottom: 4, paddingRight: 24 }}>
-          <input
-            type="checkbox"
-            checked={!!line.shipped_checked}
-            onChange={(e) => { patchLocal(line.id, { shipped_checked: e.target.checked }); saveField(line.id, { shipped_checked: e.target.checked }); }}
-            style={{ width: 26, height: 64, accentColor: "red", cursor: "pointer", display: "block" }}
-          />
-        </td>
-        <td style={{ ...td(), borderBottom: "none", paddingBottom: 4, paddingLeft: 24 }}>
-          <input
-            style={{ ...inputStyle(), width: "100%", fontSize: rowFontSize }}
-            value={line.item_name || ""}
-            onChange={(e) => patchLocal(line.id, { item_name: e.target.value })}
-            onBlur={(e) => {
-              const value = e.target.value;
-              const extracted = extractQtyFromItemName(value);
-              if (extracted) {
-                const patch = { item_name: extracted.cleanedName, quantity: extracted.quantity, quantity_unit: extracted.quantity_unit };
-                patchLocal(line.id, patch);
-                saveField(line.id, patch);
-              } else {
-                saveField(line.id, { item_name: value });
-              }
-            }}
-          />
-          <input style={{ ...inputStyle(), width: "100%", marginTop: 4, fontSize: rowFontSize, color: T.textSub }} placeholder="産地" value={line.origin || ""} onChange={(e) => patchLocal(line.id, { origin: e.target.value })} onBlur={(e) => saveField(line.id, { origin: e.target.value })} />
-        </td>
-        <td style={{ ...td(), borderBottom: "none", paddingBottom: 4 }}>
-          <QtyInput line={line} patchLocal={patchLocal} saveField={saveField} fontSize={rowFontSize} width="100%" />
-          <input style={{ ...inputStyle(), width: "100%", marginTop: 4, fontSize: rowFontSize }} placeholder="目方" value={line.actual_weight ?? ""} onChange={(e) => patchLocal(line.id, { actual_weight: e.target.value })} onBlur={(e) => saveField(line.id, { actual_weight: e.target.value ? parseFloat(e.target.value) : null })} />
-        </td>
+        {isShippingFee ? (
+          <td colSpan={3} style={{ ...td(), borderBottom: "none", paddingBottom: 4 }}>
+            <input
+              style={{ ...inputStyle(), width: "100%", fontSize: rowFontSize }}
+              value={line.item_name || ""}
+              onChange={(e) => patchLocal(line.id, { item_name: e.target.value })}
+              onBlur={(e) => saveField(line.id, { item_name: e.target.value })}
+            />
+          </td>
+        ) : (
+          <>
+            <td style={{ ...td(), borderBottom: "none", paddingBottom: 4, paddingRight: 24, textAlign: "center" }}>
+              <input
+                type="checkbox"
+                checked={!!line.shipped_checked}
+                onChange={(e) => { patchLocal(line.id, { shipped_checked: e.target.checked }); saveField(line.id, { shipped_checked: e.target.checked }); }}
+                style={{ width: 26, height: 64, accentColor: "red", cursor: "pointer" }}
+              />
+            </td>
+            <td style={{ ...td(), borderBottom: "none", paddingBottom: 4, paddingLeft: 24 }}>
+              <input
+                style={{ ...inputStyle(), width: "100%", fontSize: rowFontSize }}
+                value={line.item_name || ""}
+                onChange={(e) => patchLocal(line.id, { item_name: e.target.value })}
+                onBlur={(e) => {
+                  const value = e.target.value;
+                  const extracted = extractQtyFromItemName(value);
+                  if (extracted) {
+                    const patch = { item_name: extracted.cleanedName, quantity: extracted.quantity, quantity_unit: extracted.quantity_unit };
+                    patchLocal(line.id, patch);
+                    saveField(line.id, patch);
+                  } else {
+                    saveField(line.id, { item_name: value });
+                  }
+                }}
+              />
+              <input style={{ ...inputStyle(), width: "70%", marginTop: 4, fontSize: rowFontSize, color: T.textSub }} placeholder="産地" value={line.origin || ""} onChange={(e) => patchLocal(line.id, { origin: e.target.value })} onBlur={(e) => saveField(line.id, { origin: e.target.value })} />
+            </td>
+            <td style={{ ...td(), borderBottom: "none", paddingBottom: 4 }}>
+              <QtyInput line={line} patchLocal={patchLocal} saveField={saveField} fontSize={rowFontSize} width="100%" />
+              <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
+                <input style={{ ...inputStyle(), width: "50%", fontSize: rowFontSize }} placeholder="目方" value={line.actual_weight ?? ""} onChange={(e) => patchLocal(line.id, { actual_weight: e.target.value })} onBlur={(e) => saveField(line.id, { actual_weight: e.target.value ? parseFloat(e.target.value) : null })} />
+                <input style={{ ...inputStyle(), width: "50%", fontSize: rowFontSize }} placeholder="単位" value={line.actual_weight_unit ?? ""} onChange={(e) => patchLocal(line.id, { actual_weight_unit: e.target.value })} onBlur={(e) => saveField(line.id, { actual_weight_unit: e.target.value })} />
+              </div>
+            </td>
+          </>
+        )}
       </tr>
       <tr>
-        <td style={{ ...td(), borderBottom: "none", paddingTop: 0, paddingBottom: 8 }}>
+        <td style={{ ...td(), borderBottom: "none", paddingTop: 0, paddingBottom: 8, textAlign: "center" }}>
           <button
             style={{ ...btn(), width: "100%", minHeight: 32, padding: "4px 0", fontSize: 10, touchAction: "manipulation" }}
             onClick={() => deleteLine(line.id, line.item_name)}
@@ -655,7 +674,8 @@ function OrdersPanel({ date, orderLines, onChanged }) {
         </td>
       </tr>
     </Fragment>
-  );
+    );
+  };
 
   // 店舗（納品先）ごとにグループ化して表示する（発送作業時にどの店舗の分か分かりやすくするため）
   const groupByDestination = (lines) => {
@@ -666,7 +686,12 @@ function OrdersPanel({ date, orderLines, onChanged }) {
       if (!map.has(key)) { map.set(key, []); order.push(key); }
       map.get(key).push(l);
     });
-    return order.map((destName) => ({ destName, destLines: map.get(destName) }));
+    // 送料は商品の後ろに来るように並べ替える（それ以外の順序は変えない）
+    const isShippingFee = (l) => /^送料/.test(l.item_name || "");
+    return order.map((destName) => ({
+      destName,
+      destLines: [...map.get(destName)].sort((a, b) => Number(isShippingFee(a)) - Number(isShippingFee(b))),
+    }));
   };
 
   const renderSection = (label, lines, opts = {}) => (
@@ -679,8 +704,8 @@ function OrdersPanel({ date, orderLines, onChanged }) {
           <table style={{ ...table(), tableLayout: "fixed" }}>
             <colgroup>
               <col style={{ width: "10%" }} />
-              <col style={{ width: "70%" }} />
-              <col style={{ width: "20%" }} />
+              <col style={{ width: "60%" }} />
+              <col style={{ width: "30%" }} />
             </colgroup>
             <tbody>
               {groupByDestination(lines).map(({ destName, destLines }, gi) => (

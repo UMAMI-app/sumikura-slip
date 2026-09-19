@@ -56,6 +56,7 @@ create table if not exists order_lines (
   -- 実納品情報（原稿単価は上書きしない。別フィールドで保持）
   actual_quantity numeric,
   actual_weight numeric,        -- kg数値（単価計算用）
+  actual_weight_unit text default 'kg',  -- 実目方の単位（例: kg, g）
   actual_unit_price numeric,
   actual_unit_price_unit text,  -- 実納品単価の単位（原稿単位と異なる場合の編集用）
 
@@ -122,3 +123,8 @@ grant select, insert, update, delete on
   invoices,
   invoice_line_items
 to anon, authenticated;
+
+-- マイグレーション: 目方の単位欄を追加(2026-09)。
+-- 既存のorder_linesテーブルにはcreate table if not existsが効かないため、
+-- 既に運用中のDBでは以下を一度だけ実行してください。
+alter table order_lines add column if not exists actual_weight_unit text default 'kg';
