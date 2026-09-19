@@ -472,8 +472,11 @@ function OrdersPanel({ date, orderLines, onChanged }) {
   const [busy, setBusy] = useState(false);
   // 削除確認をブラウザのconfirm()に頼らず画面内で行う（iOSでconfirm/alertを連発すると
   // 「このページでのダイアログ表示を停止」が働いてしまい、以降ボタンが反応しなくなるため）。
-  // "__ALL__"は全削除ボタン用の特別なID。
+  // "__ALL__"は全削除ボタン用の特別なID。1回目のタップで確認状態にし、一定時間経ってから
+  // 同じボタンをもう一度タップした時だけ実行する（誤タップ・連続タップでの誤削除を防ぐ）。
   const [confirmId, setConfirmId] = useState(null);
+  const [confirmAt, setConfirmAt] = useState(0);
+  const CONFIRM_MIN_MS = 400;
 
   useEffect(() => setLocalLines(orderLines), [orderLines]);
 
@@ -570,10 +573,13 @@ function OrdersPanel({ date, orderLines, onChanged }) {
   };
 
   const clearAllToday = async () => {
+    const now = Date.now();
     if (confirmId !== "__ALL__") {
       setConfirmId("__ALL__");
+      setConfirmAt(now);
       return;
     }
+    if (now - confirmAt < CONFIRM_MIN_MS) return; // 連続タップでの誤削除を防ぐ
     setConfirmId(null);
     try {
       await db.removeWhere("order_lines", `?order_date=eq.${date}`);
@@ -585,11 +591,14 @@ function OrdersPanel({ date, orderLines, onChanged }) {
   };
 
   const deleteLine = async (id) => {
-    // 1回目のタップで確認状態にし、同じ行をもう一度タップしたら実削除する（2段階タップ）。
+    // 1回目のタップで確認状態にし、少し間を置いてから同じ行をもう一度タップしたら実削除する。
+    const now = Date.now();
     if (confirmId !== id) {
       setConfirmId(id);
+      setConfirmAt(now);
       return;
     }
+    if (now - confirmAt < CONFIRM_MIN_MS) return; // 連続タップでの誤削除を防ぐ
     setConfirmId(null);
     // 即座に画面から消す（サーバー往復や再取得を待たない）。
     // 失敗した場合はonChangedで再取得され、消えていたら元に戻る。
@@ -682,9 +691,10 @@ function OrdersPanel({ date, orderLines, onChanged }) {
             style={{
               ...btn(),
               width: "100%",
-              minHeight: 32,
-              padding: "4px 0",
-              fontSize: 10,
+              minHeight: 40,
+              padding: "8px 0",
+              fontSize: 12,
+              fontWeight: 600,
               touchAction: "manipulation",
               ...(confirmId === line.id ? { background: T.warn, borderColor: T.warn, color: "#fff" } : {}),
             }}
@@ -734,8 +744,8 @@ function OrdersPanel({ date, orderLines, onChanged }) {
         <div style={{ overflowX: "hidden" }}>
           <table style={{ ...table(), tableLayout: "fixed" }}>
             <colgroup>
-              <col style={{ width: "8%" }} />
-              <col style={{ width: "65%" }} />
+              <col style={{ width: "10%" }} />
+              <col style={{ width: "62%" }} />
               <col style={{ width: "27%" }} />
             </colgroup>
             <tbody>
