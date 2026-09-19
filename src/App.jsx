@@ -410,6 +410,25 @@ function combinedQtyText(line) {
   return `${line.quantity ?? ""}${line.quantity_unit ? " " + line.quantity_unit : ""}`.trim();
 }
 
+// 品目欄に「10尾」「3パック」のように数字+単位が含まれていたら、
+// それを数量欄用に抜き出し、品目からは取り除く。
+const ITEM_NAME_QTY_UNITS = ["本", "尾", "パック", "枚", "個", "杯", "pc"];
+const ITEM_NAME_QTY_RE = new RegExp(
+  `([\d]+(?:\.[\d]+)?)\s*(${ITEM_NAME_QTY_UNITS.join("|")})`,
+  "i"
+);
+function extractQtyFromItemName(name) {
+  if (!name) return null;
+  const m = name.match(ITEM_NAME_QTY_RE);
+  if (!m) return null;
+  const quantity = parseFloat(m[1]);
+  const quantity_unit = m[2];
+  const cleanedName = (name.slice(0, m.index) + name.slice(m.index + m[0].length))
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  return { cleanedName, quantity, quantity_unit };
+}
+
 // 数量と単位をまとめて1つの入力欄で編集する（例:「10 尾」「1.5 kg」）。
 // フォーカスを外した時に、先頭の数値部分と残りの単位部分に分解して保存する。
 function QtyInput({ line, patchLocal, saveField, fontSize, width }) {
@@ -573,7 +592,22 @@ function OrdersPanel({ date, orderLines, onChanged }) {
           />
         </td>
         <td style={{ ...td(), borderBottom: "none", paddingBottom: 4, paddingLeft: 24 }}>
-          <input style={{ ...inputStyle(), width: "100%", fontSize: rowFontSize }} value={line.item_name || ""} onChange={(e) => patchLocal(line.id, { item_name: e.target.value })} onBlur={(e) => saveField(line.id, { item_name: e.target.value })} />
+          <input
+            style={{ ...inputStyle(), width: "100%", fontSize: rowFontSize }}
+            value={line.item_name || ""}
+            onChange={(e) => patchLocal(line.id, { item_name: e.target.value })}
+            onBlur={(e) => {
+              const value = e.target.value;
+              const extracted = extractQtyFromItemName(value);
+              if (extracted) {
+                const patch = { item_name: extracted.cleanedName, quantity: extracted.quantity, quantity_unit: extracted.quantity_unit };
+                patchLocal(line.id, patch);
+                saveField(line.id, patch);
+              } else {
+                saveField(line.id, { item_name: value });
+              }
+            }}
+          />
           <input style={{ ...inputStyle(), width: "100%", marginTop: 4, fontSize: rowFontSize, color: T.textSub }} placeholder="産地" value={line.origin || ""} onChange={(e) => patchLocal(line.id, { origin: e.target.value })} onBlur={(e) => saveField(line.id, { origin: e.target.value })} />
         </td>
         <td style={{ ...td(), borderBottom: "none", paddingBottom: 4 }}>
