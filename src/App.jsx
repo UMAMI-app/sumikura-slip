@@ -616,7 +616,7 @@ function OrdersPanel({ date, orderLines, onChanged }) {
           </td>
         ) : (
           <>
-            <td style={{ ...td(), borderBottom: "none", paddingBottom: 4, paddingRight: 24, textAlign: "center" }}>
+            <td style={{ ...td(), borderBottom: "none", paddingBottom: 4, textAlign: "center" }}>
               <input
                 type="checkbox"
                 checked={!!line.shipped_checked}
@@ -641,14 +641,12 @@ function OrdersPanel({ date, orderLines, onChanged }) {
                   }
                 }}
               />
-              <input style={{ ...inputStyle(), width: "70%", marginTop: 4, fontSize: rowFontSize, color: T.textSub }} placeholder="産地" value={line.origin || ""} onChange={(e) => patchLocal(line.id, { origin: e.target.value })} onBlur={(e) => saveField(line.id, { origin: e.target.value })} />
+              <input style={{ ...inputStyle(), width: "100%", marginTop: 4, fontSize: rowFontSize, color: T.textSub }} placeholder="産地" value={line.origin || ""} onChange={(e) => patchLocal(line.id, { origin: e.target.value })} onBlur={(e) => saveField(line.id, { origin: e.target.value })} />
             </td>
             <td style={{ ...td(), borderBottom: "none", paddingBottom: 4 }}>
               <QtyInput line={line} patchLocal={patchLocal} saveField={saveField} fontSize={rowFontSize} width="100%" />
-              <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
-                <input style={{ ...inputStyle(), width: "50%", fontSize: rowFontSize }} placeholder="目方" value={line.actual_weight ?? ""} onChange={(e) => patchLocal(line.id, { actual_weight: e.target.value })} onBlur={(e) => saveField(line.id, { actual_weight: e.target.value ? parseFloat(e.target.value) : null })} />
-                <input style={{ ...inputStyle(), width: "50%", fontSize: rowFontSize }} placeholder="単位" value={line.actual_weight_unit ?? ""} onChange={(e) => patchLocal(line.id, { actual_weight_unit: e.target.value })} onBlur={(e) => saveField(line.id, { actual_weight_unit: e.target.value })} />
-              </div>
+              <input style={{ ...inputStyle(), width: "100%", marginTop: 4, fontSize: rowFontSize }} placeholder="目方" value={line.actual_weight ?? ""} onChange={(e) => patchLocal(line.id, { actual_weight: e.target.value })} onBlur={(e) => saveField(line.id, { actual_weight: e.target.value ? parseFloat(e.target.value) : null })} />
+              <input style={{ ...inputStyle(), width: "60%", marginTop: 4, fontSize: rowFontSize }} placeholder="単位" value={line.actual_weight_unit ?? ""} onChange={(e) => patchLocal(line.id, { actual_weight_unit: e.target.value })} onBlur={(e) => saveField(line.id, { actual_weight_unit: e.target.value })} />
             </td>
           </>
         )}
@@ -703,9 +701,9 @@ function OrdersPanel({ date, orderLines, onChanged }) {
         <div style={{ overflowX: "hidden" }}>
           <table style={{ ...table(), tableLayout: "fixed" }}>
             <colgroup>
-              <col style={{ width: "10%" }} />
-              <col style={{ width: "60%" }} />
-              <col style={{ width: "30%" }} />
+              <col style={{ width: "8%" }} />
+              <col style={{ width: "72%" }} />
+              <col style={{ width: "20%" }} />
             </colgroup>
             <tbody>
               {groupByDestination(lines).map(({ destName, destLines }, gi) => (
