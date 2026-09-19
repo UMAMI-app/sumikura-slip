@@ -96,7 +96,7 @@ export default function App() {
 
   const loadOrderLines = useCallback(async (date) => {
     if (!isSupabaseConfigured()) return;
-    const lines = await db.list("order_lines", `?order_date=eq.${date}&order=created_at.asc`);
+    const lines = await db.list("order_lines", `?order_date=eq.${date}&order=created_at.asc,id.asc`);
     setOrderLines(lines);
   }, []);
 
@@ -476,9 +476,11 @@ function OrdersPanel({ date, orderLines, onChanged }) {
     setLocalLines((prev) => prev.map((l) => (l.id === id ? { ...l, ...patch } : l)));
   };
   const saveField = async (id, patch) => {
+    // patchLocalで既に画面には反映済みなので、ここではDBへの保存のみ行う。
+    // 毎回onChanged()で全件再取得すると、created_atが同じ行が並び替わってしまい
+    // 「入力するたびに店舗の順番が変わる」原因になっていたため、再取得はしない。
     try {
       await db.update("order_lines", id, patch);
-      onChanged();
     } catch (e) {
       setErr("保存に失敗しました: " + (e.message || e));
     }
@@ -819,9 +821,11 @@ function PriceCheckPanel({ date, orderLines, manuscriptItems, manuscriptItemById
     setLocalLines((prev) => prev.map((l) => (l.id === id ? { ...l, ...patch } : l)));
   };
   const saveField = async (id, patch) => {
+    // patchLocalで既に画面には反映済みなので、ここではDBへの保存のみ行う。
+    // 毎回onChanged()で全件再取得すると、created_atが同じ行が並び替わってしまい
+    // 「入力するたびに店舗の順番が変わる」原因になっていたため、再取得はしない。
     try {
       await db.update("order_lines", id, patch);
-      onChanged();
     } catch (e) {
       setErr("保存に失敗しました: " + (e.message || e));
     }
