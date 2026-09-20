@@ -1236,14 +1236,22 @@ function isShippingRowName(name) {
   return /^送料/.test(name || "");
 }
 
-// 航空便・配送便は当日便のため発送日等は表示せず、宅急便のときだけ「9/19発送→9/20午前中着」
+// 「午前中」「午後」をAM/PMに略す（それ以外の自由記述はそのまま残す）。
+function abbreviateTimeNote(note) {
+  if (!note) return "";
+  if (/午前/.test(note)) return "AM";
+  if (/午後/.test(note)) return "PM";
+  return note;
+}
+
+// 航空便・配送便は当日便のため発送日等は表示せず、宅急便のときだけ「9/19→9/20AM」
 // のように省略して表示する。
 function formatShipDeliveryLabel(g) {
   if (isSameDayCategory(g.delivery_category)) return "";
-  const parts = [];
-  if (g.ship_date) parts.push(`${formatMD(g.ship_date)}発送`);
-  if (g.delivery_date) parts.push(`${formatMD(g.delivery_date)}${g.delivery_time_note || ""}着`);
-  return parts.join("→");
+  const shipPart = g.ship_date ? formatMD(g.ship_date) : "";
+  const deliveryPart = g.delivery_date ? `${formatMD(g.delivery_date)}${abbreviateTimeNote(g.delivery_time_note)}` : "";
+  if (shipPart && deliveryPart) return `${shipPart}→${deliveryPart}`;
+  return shipPart || deliveryPart;
 }
 
 // destination/delivery_category/日付が同じ行をまとめて、発注一覧タブと同じように
@@ -1458,7 +1466,7 @@ function LineActualPaste({ date }) {
         {g.destination}
         <span style={{ fontWeight: 400, fontSize: 12, color: T.textSub, marginLeft: 8 }}>
           {DELIVERY_CATEGORY_LABELS[g.delivery_category] || g.delivery_category}
-          {label && ` ・ ${label}`}
+          {label && ` ${label}`}
         </span>
       </div>
     );
@@ -1514,7 +1522,7 @@ function LineActualPaste({ date }) {
               {g.destination}
               <span style={{ fontWeight: 400, fontSize: 11, color: T.textSub, marginLeft: 6 }}>
                 {DELIVERY_CATEGORY_LABELS[g.delivery_category] || g.delivery_category}
-                {formatShipDeliveryLabel(g) && ` ・ ${formatShipDeliveryLabel(g)}`}
+                {formatShipDeliveryLabel(g) && ` ${formatShipDeliveryLabel(g)}`}
               </span>
             </div>
             {g.items.map((r) => (

@@ -272,7 +272,8 @@ export function parseLineShipmentText(rawText, referenceDateStr) {
 export function buildLineActualRows(destinations, orderDate, defaultUnitMap = {}) {
   const rows = [];
   destinations.forEach((d) => {
-    d.items.forEach((it) => {
+    // 送料は納品書には記載しないため、当面は品目としても取り込まない（一旦除外。復活する場合はここを外す）。
+    d.items.filter((it) => !/^送料/.test(it.item_name || '')).forEach((it) => {
       rows.push({
         order_date: orderDate,
         destination: d.destinationName,
