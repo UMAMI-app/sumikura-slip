@@ -29,6 +29,7 @@
 // 確認画面で修正できることが前提（28章）。
 
 import { ORIGIN_NAMES } from './manuscriptKadokura.js';
+import { guessPurchasePriceUnit } from './priceUnitGuess.js';
 
 const QTY_UNIT_RE = '本|尾|杯|枚|個|箱|束|ケ|ヶ|パック|pc';
 
@@ -188,13 +189,11 @@ function parseItemBlock(lines, defaultUnitMap) {
     // それ以外の行（想定外の備考等）は解析対象外として無視する
   }
 
-  // 単価単位が原稿に明記されていない場合の推測（4〜6章）。
-  // 実重量があれば原則kg単価。実重量が無ければ数量単位（本/個/枚 等）を単価単位とみなす。
-  // それも無ければ、商品ごとに学習済みの単位があればそれを使う（勝手な決め打きはしない）。
+  // 単価単位が原稿に明記されていない場合の推測。
+  // 「ウニ→枚」「サンマ→本」等の既知パターン → 商品ごとの学習済み単位 → それも無ければkg、
+  // の優先順位で決める（priceUnitGuess.js参照。実重量の有無だけでは判断しない）。
   if (!purchase_price_unit) {
-    if (actual_weight != null) purchase_price_unit = 'kg';
-    else if (quantity_unit) purchase_price_unit = quantity_unit;
-    else if (defaultUnitMap[nameInfo.item_name]) purchase_price_unit = defaultUnitMap[nameInfo.item_name];
+    purchase_price_unit = guessPurchasePriceUnit(nameInfo.item_name, defaultUnitMap[nameInfo.item_name]);
   }
 
   // 仕入金額（9〜10章）: kg単価なら単価×実重量、それ以外は単価×数量。

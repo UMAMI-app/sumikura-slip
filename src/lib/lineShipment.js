@@ -35,6 +35,7 @@
 // 今後実データでフォーマットのズレが見つかった場合は、このファイルの正規表現を調整すればよい。
 
 import { ORIGIN_NAMES } from './manuscriptKadokura.js';
+import { guessPurchasePriceUnit } from './priceUnitGuess.js';
 
 const CATEGORY_MAP = [
   { re: /航空便/, category: 'air' },
@@ -264,7 +265,11 @@ export function parseLineShipmentText(rawText, referenceDateStr) {
 
 // line_actual_items への insert 用の行データに変換する。
 // orderDate: アプリで選択されている日付('YYYY-MM-DD')。line_actual_itemsのorder_dateに使う。
-export function buildLineActualRows(destinations, orderDate) {
+// defaultUnitMap: { [item_name]: default_unit } 商品ごとに学習済みの単価単位（無ければ{}でよい）。
+// 仕入価格の単位が原文に明記されていない場合、ここで初期値を埋める
+// （ウニ→枚、サンマ→本 等の既知パターン→学習済み単位→それも無ければkgの優先順位。
+// priceUnitGuess.js参照。ユーザーが確認画面で修正できることが前提）。
+export function buildLineActualRows(destinations, orderDate, defaultUnitMap = {}) {
   const rows = [];
   destinations.forEach((d) => {
     d.items.forEach((it) => {
@@ -283,7 +288,7 @@ export function buildLineActualRows(destinations, orderDate) {
         actual_weight: it.actual_weight,
         actual_weight_unit: it.actual_weight_unit || (it.actual_weight != null ? 'kg' : ''),
         purchase_price: it.purchase_price,
-        purchase_price_unit: it.purchase_price_unit || '',
+        purchase_price_unit: it.purchase_price_unit || guessPurchasePriceUnit(it.item_name, defaultUnitMap[it.item_name]),
         note: it.note || '',
         raw_line: it.raw,
       });

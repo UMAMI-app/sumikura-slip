@@ -1239,6 +1239,7 @@ function LineActualPaste({ date }) {
   const [err, setErr] = useState("");
   const [saved, setSaved] = useState([]);
   const [loadingSaved, setLoadingSaved] = useState(false);
+  const [unitMap, setUnitMap] = useState({});
 
   const loadSaved = useCallback(async () => {
     setLoadingSaved(true);
@@ -1252,12 +1253,24 @@ function LineActualPaste({ date }) {
     }
   }, [date]);
 
+  const loadUnitMap = useCallback(async () => {
+    try {
+      const rows = await db.list("product_price_units");
+      const m = {};
+      rows.forEach((r) => { m[r.item_name] = r.default_unit; });
+      setUnitMap(m);
+    } catch (e) {
+      // 学習データが読めなくても致命的ではないため、名前パターン＋kgデフォルトで推測させる
+    }
+  }, []);
+
   useEffect(() => { loadSaved(); }, [loadSaved]);
+  useEffect(() => { loadUnitMap(); }, [loadUnitMap]);
 
   const handleParse = () => {
     if (!text.trim()) return;
     const { destinations, warnings } = parseLineShipmentText(text, date);
-    const rows = buildLineActualRows(destinations, date);
+    const rows = buildLineActualRows(destinations, date, unitMap);
     setPreview({ items: rows.map((row, idx) => ({ key: idx, ...row })), warnings });
   };
 
@@ -1290,9 +1303,22 @@ function LineActualPaste({ date }) {
         raw_line: it.raw_line,
       }));
       await db.insertMany("line_actual_items", payload);
+
+      // 商品ごとの単価単位を学習・更新する（原稿パーサー側と同じ学習テーブルを共有する）。
+      const learned = new Map();
+      preview.items.forEach((it) => {
+        if (it.item_name && it.purchase_price_unit) learned.set(it.item_name, it.purchase_price_unit);
+      });
+      await Promise.all(
+        Array.from(learned.entries()).map(([name, unit]) =>
+          db.upsertByKey("product_price_units", "item_name", name, { default_unit: unit, updated_at: new Date().toISOString() }).catch(() => {})
+        )
+      );
+
       setPreview(null);
       setText("");
       await loadSaved();
+      await loadUnitMap();
     } catch (e) {
       setErr("LINEデータの保存に失敗しました: " + (e.message || e));
     } finally {
