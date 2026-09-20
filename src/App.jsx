@@ -1286,6 +1286,7 @@ function LineActualPaste({ date }) {
         actual_weight_unit: it.actual_weight_unit || "",
         purchase_price: it.purchase_price,
         purchase_price_unit: it.purchase_price_unit || "",
+        note: it.note || "",
         raw_line: it.raw_line,
       }));
       await db.insertMany("line_actual_items", payload);
@@ -1354,6 +1355,7 @@ function LineActualPaste({ date }) {
           />
         </label>
       </div>
+      {it.note ? <div style={{ fontSize: 11, color: T.textSub, marginTop: 4 }}>備考: {it.note}</div> : null}
     </div>
   );
 

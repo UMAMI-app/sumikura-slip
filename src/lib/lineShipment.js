@@ -65,7 +65,7 @@ function parseItemNameLine(rawLine) {
 
   let quantity = null;
   let quantity_unit = '';
-  const qm = s.match(/^(.*?)\s*[×x]?\s*(\d+(?:\.\d+)?)\s*(本|尾|杯|枚|個|箱|束|ケ|ヶ|pc)\s*$/i);
+  const qm = s.match(/^(.*?)\s*[×x]?\s*(\d+(?:\.\d+)?)\s*(本|尾|杯|枚|個|箱|束|ケ|ヶ|パック|pc)\s*$/i);
   if (qm) {
     s = qm[1].trim();
     quantity = parseFloat(qm[2]);
@@ -81,6 +81,18 @@ function parseItemNameLine(rawLine) {
     if (ORIGIN_NAMES.some((p) => inside.includes(p))) origin = inside;
     else spec = inside;
     s = cleaned;
+  }
+
+  // 括弧が無く、スペース区切りで末尾のトークンが数字始まり（例:「100gサイズ」）の場合は
+  // 規格として切り出す（既に規格が確定している場合は上書きしない）。
+  if (!spec && s.includes(' ')) {
+    const idx = s.lastIndexOf(' ');
+    const last = s.slice(idx + 1).trim();
+    const head = s.slice(0, idx).trim();
+    if (head && /^[0-9０-９]/.test(last)) {
+      spec = last;
+      s = head;
+    }
   }
 
   return { item_name: s.trim(), origin, spec, quantity, quantity_unit };
@@ -105,6 +117,7 @@ export function parseLineShipmentText(rawText, referenceDateStr) {
     awaitingDestinationLine: false,
     awaitingShipDate: false,
     awaitingDeliveryDate: false,
+    awaitingMethod: false,
     shipDate: null,
     deliveryDate: null,
     deliveryNote: '',
@@ -142,22 +155,27 @@ export function parseLineShipmentText(rawText, referenceDateStr) {
       continue;
     }
 
-    if (/^🚚\s*発送$/.test(line)) { dest.awaitingShipDate = true; continue; }
+    // 「📦 納品あ」のように絵文字直後に余計な文字が付くことがあるため、前方一致で判定する。
+    if (/^🚚\s*発送/.test(line)) { dest.awaitingShipDate = true; continue; }
     if (dest.awaitingShipDate && (m = line.match(/^(\d{1,2})\/(\d{1,2})$/))) {
       dest.shipDate = resolveDate(parseInt(m[1], 10), parseInt(m[2], 10), referenceDateStr);
       dest.awaitingShipDate = false;
       continue;
     }
-    if (/^📦\s*納品$/.test(line)) { dest.awaitingDeliveryDate = true; continue; }
+    if (/^📦\s*納品/.test(line)) { dest.awaitingDeliveryDate = true; continue; }
     if (dest.awaitingDeliveryDate && (m = line.match(/^(\d{1,2})\/(\d{1,2})(.*)$/))) {
       dest.deliveryDate = resolveDate(parseInt(m[1], 10), parseInt(m[2], 10), referenceDateStr);
       dest.deliveryNote = (m[3] || '').trim();
       dest.awaitingDeliveryDate = false;
+      dest.awaitingMethod = true;
       continue;
     }
-    if (!dest.methodRaw && /^(航空便|宅急便|配達|配送)/.test(line)) {
+    // 配送方法は「航空便」「宅急便」等の決め打ちキーワードに頼らず、納品日の次に来る行を
+    // そのまま配送方法として受け取る（「その他」「自社配送🚚」等、未知の表記でも取りこぼさない）。
+    if (dest.awaitingMethod) {
       dest.methodRaw = line;
       dest.category = classifyCategory(line);
+      dest.awaitingMethod = false;
       continue;
     }
 
@@ -166,6 +184,16 @@ export function parseLineShipmentText(rawText, referenceDateStr) {
       if (lastItem) {
         lastItem.purchase_price = parseFloat(m[1].replace(/,/g, ''));
         lastItem.purchase_price_unit = m[2] || '';
+      } else {
+        warnings.push(`「${line}」の対象の品目が見つかりませんでした`);
+      }
+      continue;
+    }
+    // 「売値 ¥5,200」: LINE実績データ側には基本的に登場しない想定だが、貼り付けられた場合に
+    // 新しい品目として誤認識されないよう、備考として保持するだけにする（納品書には使わない）。
+    if ((m = line.match(/^売値\s*[¥￥]\s*([\d,]+)\s*$/))) {
+      if (lastItem) {
+        lastItem.note = lastItem.note ? `${lastItem.note} / ${line}` : line;
       } else {
         warnings.push(`「${line}」の対象の品目が見つかりませんでした`);
       }
@@ -187,7 +215,7 @@ export function parseLineShipmentText(rawText, referenceDateStr) {
       continue;
     }
     // 「800g × 1本」のように、規格＋数量が品目名行の次の行に分かれて来ることがある（20章の例）。
-    if ((m = line.match(/^(.+?)\s*[×x]\s*(\d+(?:\.\d+)?)\s*(本|尾|杯|枚|個|箱|束|ケ|ヶ|pc)\s*$/i))) {
+    if ((m = line.match(/^(.+?)\s*[×x]\s*(\d+(?:\.\d+)?)\s*(本|尾|杯|枚|個|箱|束|ケ|ヶ|パック|pc)\s*$/i))) {
       if (lastItem) {
         if (!lastItem.spec) lastItem.spec = m[1].trim();
         if (lastItem.quantity == null) {
@@ -200,7 +228,7 @@ export function parseLineShipmentText(rawText, referenceDateStr) {
       continue;
     }
     // 数量+単位だけの行（品目名行に数量が付いていなかった場合の継続行）
-    if ((m = line.match(/^(\d+(?:\.\d+)?)\s*(本|尾|杯|枚|個|箱|束|ケ|ヶ|pc)$/i))) {
+    if ((m = line.match(/^(\d+(?:\.\d+)?)\s*(本|尾|杯|枚|個|箱|束|ケ|ヶ|パック|pc)$/i))) {
       if (lastItem && lastItem.quantity == null) {
         lastItem.quantity = parseFloat(m[1]);
         lastItem.quantity_unit = /^pc$/i.test(m[2]) ? 'pc' : m[2].replace('ケ', 'ヶ');
@@ -223,7 +251,7 @@ export function parseLineShipmentText(rawText, referenceDateStr) {
       // ここまでの見出し情報が揃っていれば、以降は品目行として扱う
       const parsed = parseItemNameLine(line);
       // 仕入価格が無い商品があるのは正常（20章）。purchase_priceはnullのまま保持する。
-      lastItem = { ...parsed, actual_weight: null, actual_weight_unit: '', purchase_price: null, purchase_price_unit: '', raw: line };
+      lastItem = { ...parsed, actual_weight: null, actual_weight_unit: '', purchase_price: null, purchase_price_unit: '', note: '', raw: line };
       dest.items.push(lastItem);
       continue;
     }
@@ -256,6 +284,7 @@ export function buildLineActualRows(destinations, orderDate) {
         actual_weight_unit: it.actual_weight_unit || (it.actual_weight != null ? 'kg' : ''),
         purchase_price: it.purchase_price,
         purchase_price_unit: it.purchase_price_unit || '',
+        note: it.note || '',
         raw_line: it.raw,
       });
     });
