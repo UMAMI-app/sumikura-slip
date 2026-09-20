@@ -1232,6 +1232,47 @@ function ManuscriptPurchasePaste({ date }) {
 }
 
 /* ----- ② LINE実績データを貼り付け ----- */
+function isShippingRowName(name) {
+  return /^送料/.test(name || "");
+}
+
+// 航空便・配送便は当日便のため発送日等は表示せず、宅急便のときだけ「9/19発送→9/20午前中着」
+// のように省略して表示する。
+function formatShipDeliveryLabel(g) {
+  if (isSameDayCategory(g.delivery_category)) return "";
+  const parts = [];
+  if (g.ship_date) parts.push(`${formatMD(g.ship_date)}発送`);
+  if (g.delivery_date) parts.push(`${formatMD(g.delivery_date)}${g.delivery_time_note || ""}着`);
+  return parts.join("→");
+}
+
+// destination/delivery_category/日付が同じ行をまとめて、発注一覧タブと同じように
+// 納品先ごとの見出し付きで表示するためのグルーピング（送料は各グループの最後に回す）。
+function groupLineItemsByDestination(items) {
+  const map = new Map();
+  const order = [];
+  items.forEach((it) => {
+    const key = [it.destination || "", it.delivery_category, it.ship_date, it.delivery_date, it.delivery_time_note].join("|");
+    if (!map.has(key)) {
+      map.set(key, {
+        destination: it.destination || "（納品先不明）",
+        delivery_category: it.delivery_category,
+        ship_date: it.ship_date,
+        delivery_date: it.delivery_date,
+        delivery_time_note: it.delivery_time_note,
+        items: [],
+      });
+      order.push(key);
+    }
+    map.get(key).items.push(it);
+  });
+  return order.map((k) => {
+    const g = map.get(k);
+    g.items = [...g.items].sort((a, b) => Number(isShippingRowName(a.item_name)) - Number(isShippingRowName(b.item_name)));
+    return g;
+  });
+}
+
 function LineActualPaste({ date }) {
   const [text, setText] = useState("");
   const [preview, setPreview] = useState(null);
@@ -1278,6 +1319,9 @@ function LineActualPaste({ date }) {
     setPreview((prev) => ({ ...prev, items: prev.items.map((it) => (it.key === key ? { ...it, ...patch } : it)) }));
   };
 
+  const groupedPreviewItems = useMemo(() => (preview ? groupLineItemsByDestination(preview.items) : []), [preview]);
+  const groupedSavedItems = useMemo(() => groupLineItemsByDestination(saved), [saved]);
+
   const handleConfirm = async () => {
     if (!preview || preview.items.length === 0) return;
     setSaving(true);
@@ -1305,9 +1349,12 @@ function LineActualPaste({ date }) {
       await db.insertMany("line_actual_items", payload);
 
       // 商品ごとの単価単位を学習・更新する（原稿パーサー側と同じ学習テーブルを共有する）。
+      // 送料は単価という概念が無いため学習対象から除く。
       const learned = new Map();
       preview.items.forEach((it) => {
-        if (it.item_name && it.purchase_price_unit) learned.set(it.item_name, it.purchase_price_unit);
+        if (!isShippingRowName(it.item_name) && it.item_name && it.purchase_price_unit) {
+          learned.set(it.item_name, it.purchase_price_unit);
+        }
       });
       await Promise.all(
         Array.from(learned.entries()).map(([name, unit]) =>
@@ -1336,54 +1383,86 @@ function LineActualPaste({ date }) {
     }
   };
 
-  const renderPreviewItem = (it) => (
-    <div key={it.key} style={{ ...card(), marginBottom: 8, padding: 10 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: T.textSub, marginBottom: 4 }}>
-        <span>{it.destination || "（納品先不明）"} ・ {DELIVERY_CATEGORY_LABELS[it.delivery_category] || it.delivery_category}</span>
-        <span>発送{it.ship_date || "―"} / 納品{it.delivery_date || "―"}{it.delivery_time_note}</span>
+  const renderPreviewItem = (it) => {
+    if (isShippingRowName(it.item_name)) {
+      return (
+        <div key={it.key} style={{ ...card(), marginBottom: 8, padding: 10, background: "#f3f3f3" }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <input style={{ ...inputStyle(), width: 130, fontWeight: 600 }} value={it.item_name ?? ""} onChange={(e) => updateItem(it.key, { item_name: e.target.value })} />
+            <label style={{ fontSize: 11, color: T.textSub }}>
+              金額
+              <input
+                style={{ ...inputStyle(), width: 80, marginLeft: 4 }}
+                value={it.purchase_price ?? ""}
+                onChange={(e) => updateItem(it.key, { purchase_price: e.target.value ? parseFloat(e.target.value) : null })}
+              />
+            </label>
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div key={it.key} style={{ ...card(), marginBottom: 8, padding: 10 }}>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 6 }}>
+          <input style={{ ...inputStyle(), width: 120, fontWeight: 600 }} value={it.item_name ?? ""} onChange={(e) => updateItem(it.key, { item_name: e.target.value })} />
+          <input style={{ ...inputStyle(), width: 70 }} placeholder="規格" value={it.spec ?? ""} onChange={(e) => updateItem(it.key, { spec: e.target.value })} />
+          <input style={{ ...inputStyle(), width: 60 }} placeholder="産地" value={it.origin ?? ""} onChange={(e) => updateItem(it.key, { origin: e.target.value })} />
+          <label style={{ fontSize: 11, color: T.textSub }}>
+            数量
+            <input style={{ ...inputStyle(), width: 44, marginLeft: 4 }} value={it.quantity ?? ""} onChange={(e) => updateItem(it.key, { quantity: e.target.value ? parseFloat(e.target.value) : null })} />
+            <input style={{ ...inputStyle(), width: 40, marginLeft: 4 }} value={it.quantity_unit ?? ""} onChange={(e) => updateItem(it.key, { quantity_unit: e.target.value })} />
+          </label>
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <label style={{ fontSize: 11, color: T.textSub }}>
+            実重量
+            <input
+              style={{ ...inputStyle(), width: 60, marginLeft: 4 }}
+              value={it.actual_weight ?? ""}
+              onChange={(e) => updateItem(it.key, { actual_weight: e.target.value ? parseFloat(e.target.value) : null, actual_weight_unit: e.target.value ? "kg" : "" })}
+            />
+            kg
+          </label>
+          <label style={{ fontSize: 11, color: T.textSub }}>
+            仕入価格
+            <input
+              style={{ ...inputStyle(), width: 70, marginLeft: 4 }}
+              value={it.purchase_price ?? ""}
+              onChange={(e) => updateItem(it.key, { purchase_price: e.target.value ? parseFloat(e.target.value) : null })}
+            />
+            <input
+              style={{ ...inputStyle(), width: 50, marginLeft: 4 }}
+              placeholder="kg/本"
+              value={it.purchase_price_unit ?? ""}
+              onChange={(e) => updateItem(it.key, { purchase_price_unit: e.target.value })}
+            />
+          </label>
+        </div>
+        {it.note ? <div style={{ fontSize: 11, color: T.textSub, marginTop: 4 }}>備考: {it.note}</div> : null}
       </div>
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 6 }}>
-        <input style={{ ...inputStyle(), width: 120, fontWeight: 600 }} value={it.item_name ?? ""} onChange={(e) => updateItem(it.key, { item_name: e.target.value })} />
-        <input style={{ ...inputStyle(), width: 70 }} placeholder="規格" value={it.spec ?? ""} onChange={(e) => updateItem(it.key, { spec: e.target.value })} />
-        <input style={{ ...inputStyle(), width: 60 }} placeholder="産地" value={it.origin ?? ""} onChange={(e) => updateItem(it.key, { origin: e.target.value })} />
-        <label style={{ fontSize: 11, color: T.textSub }}>
-          数量
-          <input style={{ ...inputStyle(), width: 44, marginLeft: 4 }} value={it.quantity ?? ""} onChange={(e) => updateItem(it.key, { quantity: e.target.value ? parseFloat(e.target.value) : null })} />
-          <input style={{ ...inputStyle(), width: 40, marginLeft: 4 }} value={it.quantity_unit ?? ""} onChange={(e) => updateItem(it.key, { quantity_unit: e.target.value })} />
-        </label>
+    );
+  };
+
+  const renderGroupHeader = (g, gi) => {
+    const label = formatShipDeliveryLabel(g);
+    return (
+      <div
+        style={{
+          fontWeight: 700,
+          fontSize: 15,
+          borderBottom: `1px solid ${T.border}`,
+          padding: gi === 0 ? "4px 4px 6px" : "16px 4px 6px",
+          marginBottom: 8,
+        }}
+      >
+        {g.destination}
+        <span style={{ fontWeight: 400, fontSize: 12, color: T.textSub, marginLeft: 8 }}>
+          {DELIVERY_CATEGORY_LABELS[g.delivery_category] || g.delivery_category}
+          {label && ` ・ ${label}`}
+        </span>
       </div>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-        <label style={{ fontSize: 11, color: T.textSub }}>
-          実重量
-          <input
-            style={{ ...inputStyle(), width: 60, marginLeft: 4 }}
-            value={it.actual_weight ?? ""}
-            onChange={(e) => updateItem(it.key, { actual_weight: e.target.value ? parseFloat(e.target.value) : null, actual_weight_unit: e.target.value ? "kg" : "" })}
-          />
-          kg
-        </label>
-        <label style={{ fontSize: 11, color: T.textSub }}>
-          仕入価格
-          <input
-            style={{ ...inputStyle(), width: 70, marginLeft: 4 }}
-            placeholder="未記載なら空欄"
-            value={it.purchase_price ?? ""}
-            onChange={(e) => updateItem(it.key, { purchase_price: e.target.value ? parseFloat(e.target.value) : null })}
-          />
-        </label>
-        <label style={{ fontSize: 11, color: T.textSub }}>
-          単位
-          <input
-            style={{ ...inputStyle(), width: 50, marginLeft: 4 }}
-            placeholder="kg/本 等"
-            value={it.purchase_price_unit ?? ""}
-            onChange={(e) => updateItem(it.key, { purchase_price_unit: e.target.value })}
-          />
-        </label>
-      </div>
-      {it.note ? <div style={{ fontSize: 11, color: T.textSub, marginTop: 4 }}>備考: {it.note}</div> : null}
-    </div>
-  );
+    );
+  };
 
   return (
     <section style={card()}>
@@ -1411,7 +1490,12 @@ function LineActualPaste({ date }) {
           ) : (
             <>
               <p style={{ fontSize: 12, color: T.textSub }}>{preview.items.length}件を抽出しました。内容を確認・修正してから確定してください。</p>
-              {preview.items.map(renderPreviewItem)}
+              {groupedPreviewItems.map((g, gi) => (
+                <Fragment key={gi}>
+                  {renderGroupHeader(g, gi)}
+                  {g.items.map(renderPreviewItem)}
+                </Fragment>
+              ))}
               <button style={btn(true)} onClick={handleConfirm} disabled={saving}>
                 {saving ? "保存中..." : "この内容で確定"}
               </button>
@@ -1424,13 +1508,26 @@ function LineActualPaste({ date }) {
         <div style={{ fontSize: 12, color: T.textSub, marginBottom: 6 }}>
           {loadingSaved ? "読み込み中..." : `本日確定済み: ${saved.length}件`}
         </div>
-        {saved.map((r) => (
-          <div key={r.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, padding: "4px 0", borderBottom: `1px solid ${T.softBorder}` }}>
-            <span>
-              {r.destination ? `${r.destination} / ` : ""}{r.item_name}{r.spec ? `(${r.spec})` : ""}{" "}
-              {r.purchase_price != null ? `${fmtYen(r.purchase_price)}/${r.purchase_price_unit || "?"}` : "仕入価格なし"}
-            </span>
-            <button style={{ ...btn(false), padding: "2px 8px", fontSize: 11 }} onClick={() => handleDeleteSaved(r.id)}>削除</button>
+        {groupedSavedItems.map((g, gi) => (
+          <div key={gi} style={{ marginBottom: 8 }}>
+            <div style={{ fontWeight: 700, fontSize: 13, marginTop: gi === 0 ? 0 : 10, marginBottom: 4 }}>
+              {g.destination}
+              <span style={{ fontWeight: 400, fontSize: 11, color: T.textSub, marginLeft: 6 }}>
+                {DELIVERY_CATEGORY_LABELS[g.delivery_category] || g.delivery_category}
+                {formatShipDeliveryLabel(g) && ` ・ ${formatShipDeliveryLabel(g)}`}
+              </span>
+            </div>
+            {g.items.map((r) => (
+              <div key={r.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, padding: "4px 0", borderBottom: `1px solid ${T.softBorder}` }}>
+                <span>
+                  {r.item_name}{r.spec ? `(${r.spec})` : ""}{" "}
+                  {isShippingRowName(r.item_name)
+                    ? (r.purchase_price != null ? fmtYen(r.purchase_price) : "金額なし")
+                    : (r.purchase_price != null ? `${fmtYen(r.purchase_price)}/${r.purchase_price_unit || "?"}` : "仕入価格なし")}
+                </span>
+                <button style={{ ...btn(false), padding: "2px 8px", fontSize: 11 }} onClick={() => handleDeleteSaved(r.id)}>削除</button>
+              </div>
+            ))}
           </div>
         ))}
       </div>

@@ -288,7 +288,7 @@ export function buildLineActualRows(destinations, orderDate, defaultUnitMap = {}
         actual_weight: it.actual_weight,
         actual_weight_unit: it.actual_weight_unit || (it.actual_weight != null ? 'kg' : ''),
         purchase_price: it.purchase_price,
-        purchase_price_unit: it.purchase_price_unit || guessPurchasePriceUnit(it.item_name, defaultUnitMap[it.item_name]),
+        purchase_price_unit: it.purchase_price_unit || (/^送料/.test(it.item_name || '') ? '' : guessPurchasePriceUnit(it.item_name, defaultUnitMap[it.item_name])),
         note: it.note || '',
         raw_line: it.raw,
       });
