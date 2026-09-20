@@ -2,8 +2,8 @@ import { useState, useEffect, useCallback, useRef, useMemo, Fragment } from "rea
 import { db, isSupabaseConfigured } from "./lib/supabase";
 import { extractKadokuraManuscriptItems } from "./lib/manuscriptKadokura";
 import { parseShippingList, cleanDestinationName } from "./lib/shippingList";
-import { parseLineShipmentText, buildOrderLineRows } from "./lib/lineShipment";
-import { rankManuscriptCandidates } from "./lib/matching";
+import { parseLineShipmentText, buildLineActualRows } from "./lib/lineShipment";
+import { parseManuscriptPurchaseText } from "./lib/manuscriptPurchase";
 import {
   calcLineAmount,
   comparePrice,
@@ -888,11 +888,6 @@ function OrdersPanel({ date, orderLines, onChanged }) {
 function PriceCheckPanel({ date, orderLines, manuscriptItems, manuscriptItemById, onChanged }) {
   const [localLines, setLocalLines] = useState(orderLines);
   const [err, setErr] = useState("");
-  // LINE実績データ取込（発注一覧の発送リスト取込とは別の、価格チェック専用の入力経路。
-  // 追加仕様書「LINE出荷実績データを利用した照合・納品書作成」参照）
-  const [lineText, setLineText] = useState("");
-  const [linePreview, setLinePreview] = useState(null); // { items, warnings }
-  const [lineSaving, setLineSaving] = useState(false);
 
   useEffect(() => setLocalLines(orderLines), [orderLines]);
 
@@ -922,126 +917,6 @@ function PriceCheckPanel({ date, orderLines, manuscriptItems, manuscriptItemById
       value: it.id,
       label: `${it.item_name}（${it.origin || "産地未記載"}）${it.spec ? " " + it.spec : ""} ${fmtYen(it.unit_price)}/${it.price_unit || "?"}`,
     }));
-
-  const handleLineParse = () => {
-    if (!lineText.trim()) return;
-    const { destinations, warnings } = parseLineShipmentText(lineText, date);
-    const rows = buildOrderLineRows(destinations, date);
-    const items = rows.map((row, idx) => {
-      const candidates = rankManuscriptCandidates({ item_name: row.item_name, spec: row.spec, origin: row.origin }, manuscriptItems);
-      return { key: idx, ...row, candidates, selectedManuscriptId: candidates[0] ? candidates[0].item.id : "" };
-    });
-    setLinePreview({ items, warnings });
-  };
-
-  const updateLinePreviewItem = (key, patch) => {
-    setLinePreview((prev) => ({
-      ...prev,
-      items: prev.items.map((it) => (it.key === key ? { ...it, ...patch } : it)),
-    }));
-  };
-
-  const handleLineConfirm = async () => {
-    if (!linePreview || linePreview.items.length === 0) return;
-    setLineSaving(true);
-    setErr("");
-    try {
-      const payload = linePreview.items.map((it) => ({
-        order_date: it.order_date,
-        destination: it.destination,
-        delivery_category: it.delivery_category,
-        delivery_date: it.delivery_date,
-        delivery_time_note: it.delivery_time_note,
-        ship_date: it.ship_date,
-        item_name: it.item_name,
-        origin: it.origin,
-        spec: it.spec,
-        quantity: it.quantity,
-        quantity_unit: it.quantity_unit,
-        actual_weight: it.actual_weight,
-        actual_weight_unit: it.actual_weight_unit,
-        actual_unit_price: it.actual_unit_price,
-        actual_unit_price_unit: it.actual_unit_price_unit,
-        manuscript_item_id: it.selectedManuscriptId || null,
-        manuscript_price_status: it.selectedManuscriptId ? "linked" : "none",
-        raw_line: it.raw_line,
-      }));
-      await db.insertMany("order_lines", payload);
-      setLinePreview(null);
-      setLineText("");
-      onChanged();
-    } catch (e) {
-      setErr("LINEデータの取り込みに失敗しました: " + (e.message || e));
-    } finally {
-      setLineSaving(false);
-    }
-  };
-
-  const renderLinePreviewItem = (it) => (
-    <div key={it.key} style={{ ...card(), marginBottom: 10, padding: 10 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: T.textSub, marginBottom: 4 }}>
-        <span>{it.destination || "（納品先不明）"} ・ {DELIVERY_CATEGORY_LABELS[it.delivery_category] || it.delivery_category}</span>
-        <span>発送{it.ship_date || "―"} / 納品{it.delivery_date || "―"}{it.delivery_time_note}</span>
-      </div>
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 6 }}>
-        <strong style={{ fontSize: 14 }}>{it.item_name}</strong>
-        {it.spec && <span style={{ fontSize: 12, color: T.textSub }}>({it.spec})</span>}
-        {it.origin && <span style={{ fontSize: 12, color: T.textSub }}>産地:{it.origin}</span>}
-        <span style={{ fontSize: 12, color: T.textSub }}>{it.quantity ?? "?"}{it.quantity_unit}</span>
-      </div>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
-        <label style={{ fontSize: 11, color: T.textSub }}>
-          実目方
-          <input
-            style={{ ...inputStyle(), width: 70, marginLeft: 4 }}
-            value={it.actual_weight ?? ""}
-            onChange={(e) => updateLinePreviewItem(it.key, { actual_weight: e.target.value ? parseFloat(e.target.value) : null })}
-          />
-          kg
-        </label>
-        <label style={{ fontSize: 11, color: T.textSub }}>
-          仕入単価
-          <input
-            style={{ ...inputStyle(), width: 80, marginLeft: 4 }}
-            value={it.actual_unit_price ?? ""}
-            onChange={(e) => updateLinePreviewItem(it.key, { actual_unit_price: e.target.value ? parseFloat(e.target.value) : null })}
-          />
-        </label>
-        <label style={{ fontSize: 11, color: T.textSub }}>
-          単位
-          <input
-            style={{ ...inputStyle(), width: 60, marginLeft: 4 }}
-            placeholder="kg/本 等"
-            value={it.actual_unit_price_unit ?? ""}
-            onChange={(e) => updateLinePreviewItem(it.key, { actual_unit_price_unit: e.target.value })}
-          />
-        </label>
-      </div>
-      <div style={{ fontSize: 12 }}>
-        <div style={{ color: T.textSub, marginBottom: 4 }}>原稿候補（自動提示・最終選択はご自身で）:</div>
-        {it.candidates.slice(0, 5).map((c) => (
-          <label key={c.item.id} style={{ display: "block", marginBottom: 2, cursor: "pointer" }}>
-            <input
-              type="radio"
-              checked={it.selectedManuscriptId === c.item.id}
-              onChange={() => updateLinePreviewItem(it.key, { selectedManuscriptId: c.item.id })}
-              style={{ marginRight: 6 }}
-            />
-            {c.item.item_name}（{c.item.origin || "産地未記載"}）{c.item.spec ? " " + c.item.spec : ""} {fmtYen(c.item.unit_price)}/{c.item.price_unit || "?"}
-          </label>
-        ))}
-        <label style={{ display: "block", cursor: "pointer" }}>
-          <input
-            type="radio"
-            checked={!it.selectedManuscriptId}
-            onChange={() => updateLinePreviewItem(it.key, { selectedManuscriptId: "" })}
-            style={{ marginRight: 6 }}
-          />
-          原稿に該当なし（原稿価格なしとして確定）
-        </label>
-      </div>
-    </div>
-  );
 
   const renderRow = (line) => {
     const mi = line.manuscript_item_id ? manuscriptItemById.get(line.manuscript_item_id) : null;
@@ -1101,40 +976,11 @@ function PriceCheckPanel({ date, orderLines, manuscriptItems, manuscriptItemById
       <h2 style={h2()}>価格チェック（{date}）</h2>
       {err && <div style={{ color: T.warn, marginBottom: 12 }}>{err}</div>}
 
-      <section style={card()}>
-        <textarea
-          value={lineText}
-          onChange={(e) => setLineText(e.target.value)}
-          rows={8}
-          style={{ width: "100%", fontFamily: "monospace", fontSize: 14, padding: 8, border: `1px solid ${T.border}`, borderRadius: 6 }}
-        />
-        <div style={{ marginTop: 8 }}>
-          <button style={btn(true)} onClick={handleLineParse}>解析する</button>
-        </div>
-
-        {linePreview && (
-          <div style={{ marginTop: 12 }}>
-            {linePreview.warnings.length > 0 && (
-              <div style={{ fontSize: 12, color: T.warn, marginBottom: 8 }}>
-                {linePreview.warnings.map((w, i) => <div key={i}>⚠️ {w}</div>)}
-              </div>
-            )}
-            {linePreview.items.length === 0 ? (
-              <p style={{ fontSize: 13, color: T.textSub }}>品目を抽出できませんでした。テキストの形式をご確認ください。</p>
-            ) : (
-              <>
-                <p style={{ fontSize: 12, color: T.textSub }}>{linePreview.items.length}件を抽出しました。内容を確認・修正してから確定してください。</p>
-                {linePreview.items.map(renderLinePreviewItem)}
-                <button style={btn(true)} onClick={handleLineConfirm} disabled={lineSaving}>
-                  {lineSaving ? "追加中..." : "この内容で価格チェックに追加"}
-                </button>
-              </>
-            )}
-          </div>
-        )}
-      </section>
+      <ManuscriptPurchasePaste date={date} />
+      <LineActualPaste date={date} />
 
       <section style={card()}>
+        <h3 style={h3()}>③ 発注一覧との価格チェック（原稿読み込みタブで紐付け）</h3>
         {localLines.length === 0 ? (
           <p style={{ color: T.textSub, fontSize: 13 }}>発注はありません。</p>
         ) : (
@@ -1153,6 +999,414 @@ function PriceCheckPanel({ date, orderLines, manuscriptItems, manuscriptItemById
         )}
       </section>
     </div>
+  );
+}
+
+/* ----- ① 原稿を貼り付け（ブロック形式・新方式。manuscriptKadokura.jsの角倉タブ形式とは別物） ----- */
+function ManuscriptPurchasePaste({ date }) {
+  const [text, setText] = useState("");
+  const [preview, setPreview] = useState(null); // { items: [...key付き], warnings }
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+  const [saved, setSaved] = useState([]);
+  const [loadingSaved, setLoadingSaved] = useState(false);
+  const [unitMap, setUnitMap] = useState({});
+
+  const loadSaved = useCallback(async () => {
+    setLoadingSaved(true);
+    try {
+      const rows = await db.list("manuscript_purchase_items", `?manuscript_date=eq.${date}&order=created_at.asc`);
+      setSaved(rows);
+    } catch (e) {
+      setErr("読み込みに失敗しました: " + (e.message || e));
+    } finally {
+      setLoadingSaved(false);
+    }
+  }, [date]);
+
+  const loadUnitMap = useCallback(async () => {
+    try {
+      const rows = await db.list("product_price_units");
+      const m = {};
+      rows.forEach((r) => { m[r.item_name] = r.default_unit; });
+      setUnitMap(m);
+    } catch (e) {
+      // 学習データが読めなくても致命的ではないため、原則ルールのみで単位を推測させる
+    }
+  }, []);
+
+  useEffect(() => { loadSaved(); }, [loadSaved]);
+  useEffect(() => { loadUnitMap(); }, [loadUnitMap]);
+
+  const handleParse = () => {
+    if (!text.trim()) return;
+    const { items, warnings } = parseManuscriptPurchaseText(text, unitMap);
+    setPreview({ items: items.map((it, idx) => ({ key: idx, ...it })), warnings });
+  };
+
+  const updateItem = (key, patch) => {
+    setPreview((prev) => ({ ...prev, items: prev.items.map((it) => (it.key === key ? { ...it, ...patch } : it)) }));
+  };
+
+  const handleConfirm = async () => {
+    if (!preview || preview.items.length === 0) return;
+    setSaving(true);
+    setErr("");
+    try {
+      const payload = preview.items.map((it) => ({
+        manuscript_date: date,
+        is_shipping_fee: it.kind === "shipping",
+        item_name: it.item_name || "",
+        origin: it.origin || "",
+        spec: it.spec || "",
+        quantity: it.quantity,
+        quantity_unit: it.quantity_unit || "",
+        actual_weight: it.actual_weight,
+        actual_weight_unit: it.actual_weight_unit || "",
+        purchase_price: it.purchase_price,
+        purchase_price_unit: it.purchase_price_unit || "",
+        purchase_amount: it.purchase_amount,
+        selling_price: it.selling_price,
+        selling_price_unit: it.selling_price_unit || "",
+        selling_price_source: it.selling_price_source || null,
+        shipping_fee: it.shipping_fee,
+        shipping_note: it.shipping_note || "",
+        note: it.note || "",
+        raw_line: it.raw_line,
+      }));
+      await db.insertMany("manuscript_purchase_items", payload);
+
+      // 商品ごとの単価単位を学習・更新する（改修指示書6章）。
+      const learned = new Map();
+      preview.items.forEach((it) => {
+        if (it.kind === "item" && it.item_name && it.purchase_price_unit) {
+          learned.set(it.item_name, it.purchase_price_unit);
+        }
+      });
+      await Promise.all(
+        Array.from(learned.entries()).map(([name, unit]) =>
+          db.upsertByKey("product_price_units", "item_name", name, { default_unit: unit, updated_at: new Date().toISOString() }).catch(() => {})
+        )
+      );
+
+      setPreview(null);
+      setText("");
+      await loadSaved();
+      await loadUnitMap();
+    } catch (e) {
+      setErr("原稿の保存に失敗しました: " + (e.message || e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteSaved = async (id) => {
+    setSaved((prev) => prev.filter((r) => r.id !== id));
+    try {
+      await db.remove("manuscript_purchase_items", id);
+    } catch (e) {
+      setErr("削除に失敗しました: " + (e.message || e));
+      loadSaved();
+    }
+  };
+
+  const renderPreviewItem = (it) => {
+    if (it.kind === "shipping") {
+      return (
+        <div key={it.key} style={{ ...card(), marginBottom: 8, padding: 10, background: "#f3f3f3" }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <strong style={{ fontSize: 13 }}>送料</strong>
+            <input
+              style={{ ...inputStyle(), width: 120 }}
+              placeholder="備考（箱代含む等）"
+              value={it.shipping_note ?? ""}
+              onChange={(e) => updateItem(it.key, { shipping_note: e.target.value })}
+            />
+            <label style={{ fontSize: 11, color: T.textSub }}>
+              金額
+              <input
+                style={{ ...inputStyle(), width: 80, marginLeft: 4 }}
+                value={it.shipping_fee ?? ""}
+                onChange={(e) => updateItem(it.key, { shipping_fee: e.target.value ? parseFloat(e.target.value) : null })}
+              />
+            </label>
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div key={it.key} style={{ ...card(), marginBottom: 8, padding: 10 }}>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 6 }}>
+          <input style={{ ...inputStyle(), width: 130, fontWeight: 600 }} value={it.item_name ?? ""} onChange={(e) => updateItem(it.key, { item_name: e.target.value })} />
+          <input style={{ ...inputStyle(), width: 80 }} placeholder="規格" value={it.spec ?? ""} onChange={(e) => updateItem(it.key, { spec: e.target.value })} />
+          <input style={{ ...inputStyle(), width: 70 }} placeholder="産地" value={it.origin ?? ""} onChange={(e) => updateItem(it.key, { origin: e.target.value })} />
+        </div>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 6 }}>
+          <label style={{ fontSize: 11, color: T.textSub }}>
+            数量
+            <input style={{ ...inputStyle(), width: 50, marginLeft: 4 }} value={it.quantity ?? ""} onChange={(e) => updateItem(it.key, { quantity: e.target.value ? parseFloat(e.target.value) : null })} />
+            <input style={{ ...inputStyle(), width: 44, marginLeft: 4 }} value={it.quantity_unit ?? ""} onChange={(e) => updateItem(it.key, { quantity_unit: e.target.value })} />
+          </label>
+          <label style={{ fontSize: 11, color: T.textSub }}>
+            実重量
+            <input style={{ ...inputStyle(), width: 60, marginLeft: 4 }} value={it.actual_weight ?? ""} onChange={(e) => updateItem(it.key, { actual_weight: e.target.value ? parseFloat(e.target.value) : null })} />
+            kg
+          </label>
+        </div>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 6 }}>
+          <label style={{ fontSize: 11, color: T.textSub }}>
+            仕入単価
+            <input style={{ ...inputStyle(), width: 70, marginLeft: 4 }} value={it.purchase_price ?? ""} onChange={(e) => updateItem(it.key, { purchase_price: e.target.value ? parseFloat(e.target.value) : null })} />
+            <input style={{ ...inputStyle(), width: 50, marginLeft: 4 }} placeholder="単位" value={it.purchase_price_unit ?? ""} onChange={(e) => updateItem(it.key, { purchase_price_unit: e.target.value })} />
+          </label>
+          <span style={{ fontSize: 11, color: T.textSub }}>仕入金額: {it.purchase_amount != null ? fmtYen(it.purchase_amount) : "―"}</span>
+        </div>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+          <label style={{ fontSize: 11, color: T.textSub }}>
+            売値
+            <input style={{ ...inputStyle(), width: 70, marginLeft: 4 }} value={it.selling_price ?? ""} onChange={(e) => updateItem(it.key, { selling_price: e.target.value ? parseFloat(e.target.value) : null, selling_price_source: "manual" })} />
+          </label>
+          <span style={{ fontSize: 11, color: T.textSub }}>
+            {it.selling_price_source === "original" && "原稿記載値"}
+            {it.selling_price_source === "calculated" && "自動計算値（要確認）"}
+            {it.selling_price_source === "manual" && "手動修正済み"}
+          </span>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <section style={card()}>
+      <h3 style={h3()}>① 原稿を貼り付け</h3>
+      {err && <div style={{ color: T.warn, marginBottom: 8, fontSize: 13 }}>{err}</div>}
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        rows={8}
+        style={{ width: "100%", fontFamily: "monospace", fontSize: 14, padding: 8, border: `1px solid ${T.border}`, borderRadius: 6 }}
+      />
+      <div style={{ marginTop: 8 }}>
+        <button style={btn(true)} onClick={handleParse}>解析する</button>
+      </div>
+
+      {preview && (
+        <div style={{ marginTop: 12 }}>
+          {preview.warnings.length > 0 && (
+            <div style={{ fontSize: 12, color: T.warn, marginBottom: 8 }}>
+              {preview.warnings.map((w, i) => <div key={i}>⚠️ {w}</div>)}
+            </div>
+          )}
+          {preview.items.length === 0 ? (
+            <p style={{ fontSize: 13, color: T.textSub }}>品目を抽出できませんでした。テキストの形式をご確認ください。</p>
+          ) : (
+            <>
+              <p style={{ fontSize: 12, color: T.textSub }}>{preview.items.length}件を抽出しました。内容を確認・修正してから確定してください。</p>
+              {preview.items.map(renderPreviewItem)}
+              <button style={btn(true)} onClick={handleConfirm} disabled={saving}>
+                {saving ? "保存中..." : "この内容で確定"}
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
+      <div style={{ marginTop: 16, borderTop: `1px solid ${T.softBorder}`, paddingTop: 10 }}>
+        <div style={{ fontSize: 12, color: T.textSub, marginBottom: 6 }}>
+          {loadingSaved ? "読み込み中..." : `本日確定済み: ${saved.length}件`}
+        </div>
+        {saved.map((r) => (
+          <div key={r.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, padding: "4px 0", borderBottom: `1px solid ${T.softBorder}` }}>
+            <span>
+              {r.is_shipping_fee ? `送料 ${r.shipping_note || ""}` : r.item_name}
+              {!r.is_shipping_fee && r.spec ? `(${r.spec})` : ""}
+              {" "}
+              {r.is_shipping_fee ? (r.shipping_fee != null ? fmtYen(r.shipping_fee) : "金額なし") : `${fmtYen(r.purchase_price)}/${r.purchase_price_unit || "?"}`}
+            </span>
+            <button style={{ ...btn(false), padding: "2px 8px", fontSize: 11 }} onClick={() => handleDeleteSaved(r.id)}>削除</button>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/* ----- ② LINE実績データを貼り付け ----- */
+function LineActualPaste({ date }) {
+  const [text, setText] = useState("");
+  const [preview, setPreview] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+  const [saved, setSaved] = useState([]);
+  const [loadingSaved, setLoadingSaved] = useState(false);
+
+  const loadSaved = useCallback(async () => {
+    setLoadingSaved(true);
+    try {
+      const rows = await db.list("line_actual_items", `?order_date=eq.${date}&order=created_at.asc`);
+      setSaved(rows);
+    } catch (e) {
+      setErr("読み込みに失敗しました: " + (e.message || e));
+    } finally {
+      setLoadingSaved(false);
+    }
+  }, [date]);
+
+  useEffect(() => { loadSaved(); }, [loadSaved]);
+
+  const handleParse = () => {
+    if (!text.trim()) return;
+    const { destinations, warnings } = parseLineShipmentText(text, date);
+    const rows = buildLineActualRows(destinations, date);
+    setPreview({ items: rows.map((row, idx) => ({ key: idx, ...row })), warnings });
+  };
+
+  const updateItem = (key, patch) => {
+    setPreview((prev) => ({ ...prev, items: prev.items.map((it) => (it.key === key ? { ...it, ...patch } : it)) }));
+  };
+
+  const handleConfirm = async () => {
+    if (!preview || preview.items.length === 0) return;
+    setSaving(true);
+    setErr("");
+    try {
+      const payload = preview.items.map((it) => ({
+        order_date: it.order_date,
+        destination: it.destination || "",
+        ship_date: it.ship_date,
+        delivery_date: it.delivery_date,
+        delivery_time_note: it.delivery_time_note || "",
+        delivery_category: it.delivery_category,
+        item_name: it.item_name || "",
+        origin: it.origin || "",
+        spec: it.spec || "",
+        quantity: it.quantity,
+        quantity_unit: it.quantity_unit || "",
+        actual_weight: it.actual_weight,
+        actual_weight_unit: it.actual_weight_unit || "",
+        purchase_price: it.purchase_price,
+        purchase_price_unit: it.purchase_price_unit || "",
+        raw_line: it.raw_line,
+      }));
+      await db.insertMany("line_actual_items", payload);
+      setPreview(null);
+      setText("");
+      await loadSaved();
+    } catch (e) {
+      setErr("LINEデータの保存に失敗しました: " + (e.message || e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteSaved = async (id) => {
+    setSaved((prev) => prev.filter((r) => r.id !== id));
+    try {
+      await db.remove("line_actual_items", id);
+    } catch (e) {
+      setErr("削除に失敗しました: " + (e.message || e));
+      loadSaved();
+    }
+  };
+
+  const renderPreviewItem = (it) => (
+    <div key={it.key} style={{ ...card(), marginBottom: 8, padding: 10 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: T.textSub, marginBottom: 4 }}>
+        <span>{it.destination || "（納品先不明）"} ・ {DELIVERY_CATEGORY_LABELS[it.delivery_category] || it.delivery_category}</span>
+        <span>発送{it.ship_date || "―"} / 納品{it.delivery_date || "―"}{it.delivery_time_note}</span>
+      </div>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 6 }}>
+        <input style={{ ...inputStyle(), width: 120, fontWeight: 600 }} value={it.item_name ?? ""} onChange={(e) => updateItem(it.key, { item_name: e.target.value })} />
+        <input style={{ ...inputStyle(), width: 70 }} placeholder="規格" value={it.spec ?? ""} onChange={(e) => updateItem(it.key, { spec: e.target.value })} />
+        <input style={{ ...inputStyle(), width: 60 }} placeholder="産地" value={it.origin ?? ""} onChange={(e) => updateItem(it.key, { origin: e.target.value })} />
+        <label style={{ fontSize: 11, color: T.textSub }}>
+          数量
+          <input style={{ ...inputStyle(), width: 44, marginLeft: 4 }} value={it.quantity ?? ""} onChange={(e) => updateItem(it.key, { quantity: e.target.value ? parseFloat(e.target.value) : null })} />
+          <input style={{ ...inputStyle(), width: 40, marginLeft: 4 }} value={it.quantity_unit ?? ""} onChange={(e) => updateItem(it.key, { quantity_unit: e.target.value })} />
+        </label>
+      </div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <label style={{ fontSize: 11, color: T.textSub }}>
+          実重量
+          <input
+            style={{ ...inputStyle(), width: 60, marginLeft: 4 }}
+            value={it.actual_weight ?? ""}
+            onChange={(e) => updateItem(it.key, { actual_weight: e.target.value ? parseFloat(e.target.value) : null, actual_weight_unit: e.target.value ? "kg" : "" })}
+          />
+          kg
+        </label>
+        <label style={{ fontSize: 11, color: T.textSub }}>
+          仕入価格
+          <input
+            style={{ ...inputStyle(), width: 70, marginLeft: 4 }}
+            placeholder="未記載なら空欄"
+            value={it.purchase_price ?? ""}
+            onChange={(e) => updateItem(it.key, { purchase_price: e.target.value ? parseFloat(e.target.value) : null })}
+          />
+        </label>
+        <label style={{ fontSize: 11, color: T.textSub }}>
+          単位
+          <input
+            style={{ ...inputStyle(), width: 50, marginLeft: 4 }}
+            placeholder="kg/本 等"
+            value={it.purchase_price_unit ?? ""}
+            onChange={(e) => updateItem(it.key, { purchase_price_unit: e.target.value })}
+          />
+        </label>
+      </div>
+    </div>
+  );
+
+  return (
+    <section style={card()}>
+      <h3 style={h3()}>② LINE実績データを貼り付け</h3>
+      {err && <div style={{ color: T.warn, marginBottom: 8, fontSize: 13 }}>{err}</div>}
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        rows={8}
+        style={{ width: "100%", fontFamily: "monospace", fontSize: 14, padding: 8, border: `1px solid ${T.border}`, borderRadius: 6 }}
+      />
+      <div style={{ marginTop: 8 }}>
+        <button style={btn(true)} onClick={handleParse}>解析する</button>
+      </div>
+
+      {preview && (
+        <div style={{ marginTop: 12 }}>
+          {preview.warnings.length > 0 && (
+            <div style={{ fontSize: 12, color: T.warn, marginBottom: 8 }}>
+              {preview.warnings.map((w, i) => <div key={i}>⚠️ {w}</div>)}
+            </div>
+          )}
+          {preview.items.length === 0 ? (
+            <p style={{ fontSize: 13, color: T.textSub }}>品目を抽出できませんでした。テキストの形式をご確認ください。</p>
+          ) : (
+            <>
+              <p style={{ fontSize: 12, color: T.textSub }}>{preview.items.length}件を抽出しました。内容を確認・修正してから確定してください。</p>
+              {preview.items.map(renderPreviewItem)}
+              <button style={btn(true)} onClick={handleConfirm} disabled={saving}>
+                {saving ? "保存中..." : "この内容で確定"}
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
+      <div style={{ marginTop: 16, borderTop: `1px solid ${T.softBorder}`, paddingTop: 10 }}>
+        <div style={{ fontSize: 12, color: T.textSub, marginBottom: 6 }}>
+          {loadingSaved ? "読み込み中..." : `本日確定済み: ${saved.length}件`}
+        </div>
+        {saved.map((r) => (
+          <div key={r.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, padding: "4px 0", borderBottom: `1px solid ${T.softBorder}` }}>
+            <span>
+              {r.destination ? `${r.destination} / ` : ""}{r.item_name}{r.spec ? `(${r.spec})` : ""}{" "}
+              {r.purchase_price != null ? `${fmtYen(r.purchase_price)}/${r.purchase_price_unit || "?"}` : "仕入価格なし"}
+            </span>
+            <button style={{ ...btn(false), padding: "2px 8px", fontSize: 11 }} onClick={() => handleDeleteSaved(r.id)}>削除</button>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 

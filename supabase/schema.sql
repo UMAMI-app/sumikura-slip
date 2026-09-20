@@ -135,3 +135,80 @@ alter table order_lines add column if not exists actual_weight_unit text default
 -- 既存のorder_linesテーブルには以下を一度だけ実行してください。
 alter table order_lines add column if not exists spec text default '';
 alter table order_lines add column if not exists ship_date date;
+
+-- ============================================================================
+-- 追加(2026-09): 改修指示書「魚屋原稿・LINE注文・納品書・売上管理アプリ」STEP1〜4対応。
+-- 「価格チェック」タブに新設した2つの貼り付け入力（原稿ブロック形式／LINE実績データ）専用の
+-- テーブル。既存のorder_lines・manuscript_items（角倉タブ形式の原稿読み込み）には一切影響しない
+-- 独立したテーブルとして新規作成する。商品マッチング・納品書生成・売上集計（STEP5以降）は
+-- 今回は未実装で、まずは「正確に構造化して確認・保存できる」ところまでを対象とする。
+-- ============================================================================
+
+-- 原稿（ブロック形式・価格チェックタブへの貼り付け専用）
+create table if not exists manuscript_purchase_items (
+  id uuid primary key default gen_random_uuid(),
+  manuscript_date date not null default current_date,
+  is_shipping_fee boolean not null default false,
+  item_name text default '',
+  origin text default '',
+  spec text default '',
+  quantity numeric,
+  quantity_unit text default '',
+  actual_weight numeric,
+  actual_weight_unit text default '',
+  purchase_price numeric,
+  purchase_price_unit text default '',
+  purchase_amount numeric,
+  selling_price numeric,
+  selling_price_unit text default '',
+  selling_price_source text check (selling_price_source in ('original','calculated','manual')),
+  shipping_fee numeric,
+  shipping_note text default '',
+  note text default '',
+  raw_line text,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_manuscript_purchase_items_date on manuscript_purchase_items(manuscript_date);
+
+-- LINE出荷実績データ（ブロック形式・価格チェックタブへの貼り付け専用）
+create table if not exists line_actual_items (
+  id uuid primary key default gen_random_uuid(),
+  order_date date not null default current_date,
+  destination text default '',
+  ship_date date,
+  delivery_date date,
+  delivery_time_note text default '',
+  delivery_category text default 'ground',
+  item_name text default '',
+  origin text default '',
+  spec text default '',
+  quantity numeric,
+  quantity_unit text default '',
+  actual_weight numeric,
+  actual_weight_unit text default '',
+  purchase_price numeric,
+  purchase_price_unit text default '',
+  note text default '',
+  raw_line text,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_line_actual_items_date on line_actual_items(order_date);
+
+-- 商品ごとの基本単価単位（学習・保持用。6章）。
+-- 原稿解析時、単価単位が原稿に明記されていない商品について、
+-- 過去に確定した単位があればそれを初期値として提示する（ユーザーが修正可能）。
+create table if not exists product_price_units (
+  item_name text primary key,
+  default_unit text not null,
+  updated_at timestamptz not null default now()
+);
+
+alter table manuscript_purchase_items disable row level security;
+alter table line_actual_items disable row level security;
+alter table product_price_units disable row level security;
+
+grant select, insert, update, delete on
+  manuscript_purchase_items,
+  line_actual_items,
+  product_price_units
+to anon, authenticated;

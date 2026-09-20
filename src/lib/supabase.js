@@ -36,4 +36,12 @@ export const db = {
   update: (table, id, data) => sbFetch(table, { method: "PATCH", params: `?id=eq.${id}`, body: data }),
   remove: (table, id) => sbFetch(table, { method: "DELETE", params: `?id=eq.${id}` }),
   removeWhere: (table, query) => sbFetch(table, { method: "DELETE", params: query }),
+  // keyColの値がすでに存在すればPATCH、無ければPOSTする（商品ごとの単価単位の学習等に使う）。
+  upsertByKey: async (table, keyCol, keyVal, data) => {
+    const existing = await sbFetch(table, { params: `?${keyCol}=eq.${encodeURIComponent(keyVal)}` });
+    if (existing.length > 0) {
+      return sbFetch(table, { method: "PATCH", params: `?${keyCol}=eq.${encodeURIComponent(keyVal)}`, body: data });
+    }
+    return sbFetch(table, { method: "POST", body: { [keyCol]: keyVal, ...data } });
+  },
 };

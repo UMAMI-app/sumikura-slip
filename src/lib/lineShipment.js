@@ -3,12 +3,12 @@
 // 発注一覧（src/lib/shippingList.js）が読み込む「発送リスト」形式（発送作業の事前チェックリスト用、
 // まだ実際の目方・仕入価格が分からない段階のもの）とは別の、もう一つの入力経路。
 // こちらはLINEの発注システム上にすでに表示されている「実際の」出荷データ
-// （実目方・仕入価格を含む）を貼り付けて、原稿突合・価格チェック・納品書作成に使う
-// （追加仕様書「LINE出荷実績データを利用した照合・納品書作成」参照）。
+// （実重量・仕入価格を含む）を貼り付けて、原稿突合・価格チェック・納品書作成に使う
+// （改修指示書「魚屋原稿・LINE注文・納品書・売上管理アプリ 改修指示書」17〜20章参照）。
 //
-// フォーマットの前提（提示された1例から組み立てたもの。LINEアプリの仕様上、
-// 各項目の間に空行が挟まることが多いため、空行は読み飛ばして意味のある行だけを
-// 順番に処理する）:
+// フォーマットの前提（1件のブロックは👤で始まる。各項目の間に空行が挟まることが多いため、
+// 空行は読み飛ばして意味のある行だけを順番に処理する。18章: 単純な「1行=1データ」方式は禁止で、
+// 状態を持ってブロック単位で解析する）:
 //
 //   👤                      … 1件のブロックの開始マーカー
 //   見富剛                  … 発注者（使わない）
@@ -22,13 +22,16 @@
 //   9/19午前中               … 納品日＋納品時間帯の自由記述
 //   航空便✈️                 … 配送方法
 //   赤ムツ(600g) 2本         … 品目名(規格) 数量+単位
-//   1.13㎏                   … 実目方
+//   1.13㎏                   … 実重量
 //   仕入 ¥13,000             … 仕入価格（単位が書かれていないことが多い。勝手にkgと決めつけない）
 //   送料                     … 品目名だけの行（数量は次の行に来ることがある）
 //   1                       … 直前の品目(送料)の数量
 //
-// 「仕入 ¥○○」の後に単位が明記されていない場合、actual_unit_price_unit は空文字のままにする
-// （空欄なら原稿の単価単位を基準に金額計算する。単位が判断できない場合はユーザーに選ばせる）。
+// 「仕入 ¥○○」の後に単位が明記されていない場合、purchase_price_unit は空文字のままにする
+// （空欄なら原稿の単価単位を基準に金額計算する。単位が判断できない場合はユーザーに選ばせる。20章）。
+// 「㎏」だけの行（数値が無い）は実重量が未入力という意味であり、0にしてはいけない（19章）。
+// また「㎏」という文字があることだけを理由に単価単位をkgと決めつけてもいけない（19章）。
+// 仕入価格が無い商品があるのは正常であり、エラーにしない（20章）。
 // 今後実データでフォーマットのズレが見つかった場合は、このファイルの正規表現を調整すればよい。
 
 import { ORIGIN_NAMES } from './manuscriptKadokura.js';
@@ -127,6 +130,7 @@ export function parseLineShipmentText(rawText, referenceDateStr) {
       continue;
     }
     if (!dest) {
+      // 👤で始まっていないテキストが貼られた場合のフォールバック：先頭から1件として扱う
       dest = newDest();
     }
 
@@ -157,15 +161,17 @@ export function parseLineShipmentText(rawText, referenceDateStr) {
       continue;
     }
 
-    if ((m = line.match(/^仕入\s*¥\s*([\d,]+)(?:\s*\/\s*(\S+))?\s*$/))) {
+    // 「仕入 ¥13,000」「仕入 ¥13,000/kg」
+    if ((m = line.match(/^仕入\s*[¥￥]\s*([\d,]+)(?:\s*\/\s*(\S+))?\s*$/))) {
       if (lastItem) {
-        lastItem.actual_unit_price = parseFloat(m[1].replace(/,/g, ''));
-        lastItem.actual_unit_price_unit = m[2] || '';
+        lastItem.purchase_price = parseFloat(m[1].replace(/,/g, ''));
+        lastItem.purchase_price_unit = m[2] || '';
       } else {
         warnings.push(`「${line}」の対象の品目が見つかりませんでした`);
       }
       continue;
     }
+    // 「1.13㎏」「0.58kg」
     if ((m = line.match(/^(\d+(?:\.\d+)?)\s*(㎏|kg)\s*$/i))) {
       if (lastItem) {
         lastItem.actual_weight = parseFloat(m[1]);
@@ -175,6 +181,35 @@ export function parseLineShipmentText(rawText, referenceDateStr) {
       }
       continue;
     }
+    // 「㎏」だけの行（数値なし）＝実重量が未入力という意味。0にはせず、nullのまま何もしない（19章）。
+    if (/^(㎏|kg)\s*$/i.test(line)) {
+      if (!lastItem) warnings.push(`「${line}」の対象の品目が見つかりませんでした`);
+      continue;
+    }
+    // 「800g × 1本」のように、規格＋数量が品目名行の次の行に分かれて来ることがある（20章の例）。
+    if ((m = line.match(/^(.+?)\s*[×x]\s*(\d+(?:\.\d+)?)\s*(本|尾|杯|枚|個|箱|束|ケ|ヶ|pc)\s*$/i))) {
+      if (lastItem) {
+        if (!lastItem.spec) lastItem.spec = m[1].trim();
+        if (lastItem.quantity == null) {
+          lastItem.quantity = parseFloat(m[2]);
+          lastItem.quantity_unit = /^pc$/i.test(m[3]) ? 'pc' : m[3].replace('ケ', 'ヶ');
+        }
+      } else {
+        warnings.push(`「${line}」の対象の品目が見つかりませんでした`);
+      }
+      continue;
+    }
+    // 数量+単位だけの行（品目名行に数量が付いていなかった場合の継続行）
+    if ((m = line.match(/^(\d+(?:\.\d+)?)\s*(本|尾|杯|枚|個|箱|束|ケ|ヶ|pc)$/i))) {
+      if (lastItem && lastItem.quantity == null) {
+        lastItem.quantity = parseFloat(m[1]);
+        lastItem.quantity_unit = /^pc$/i.test(m[2]) ? 'pc' : m[2].replace('ケ', 'ヶ');
+      } else if (!lastItem) {
+        warnings.push(`「${line}」の対象の品目が見つかりませんでした`);
+      }
+      continue;
+    }
+    // 数量だけの行（例:「送料」の次に来る「1」）
     if ((m = line.match(/^(\d+(?:\.\d+)?)$/))) {
       if (lastItem && lastItem.quantity == null) {
         lastItem.quantity = parseFloat(m[1]);
@@ -185,21 +220,23 @@ export function parseLineShipmentText(rawText, referenceDateStr) {
     }
 
     if (dest.destinationName && dest.methodRaw) {
+      // ここまでの見出し情報が揃っていれば、以降は品目行として扱う
       const parsed = parseItemNameLine(line);
-      lastItem = { ...parsed, actual_weight: null, actual_weight_unit: 'kg', actual_unit_price: null, actual_unit_price_unit: '', raw: line };
+      // 仕入価格が無い商品があるのは正常（20章）。purchase_priceはnullのまま保持する。
+      lastItem = { ...parsed, actual_weight: null, actual_weight_unit: '', purchase_price: null, purchase_price_unit: '', raw: line };
       dest.items.push(lastItem);
       continue;
     }
+    // それ以外（発注者名・ステータス・発注元名など、まだ見出し情報が揃う前の行）は読み飛ばす
   }
   flushDest();
 
   return { destinations, warnings };
 }
 
-// order_lines への insert 用の行データに変換する。
-// orderDate: アプリで選択されている日付('YYYY-MM-DD')。order_linesのorder_dateに使う
-//   （このアプリは常に「今日」を対象にする運用のため）。
-export function buildOrderLineRows(destinations, orderDate) {
+// line_actual_items への insert 用の行データに変換する。
+// orderDate: アプリで選択されている日付('YYYY-MM-DD')。line_actual_itemsのorder_dateに使う。
+export function buildLineActualRows(destinations, orderDate) {
   const rows = [];
   destinations.forEach((d) => {
     d.items.forEach((it) => {
@@ -216,9 +253,9 @@ export function buildOrderLineRows(destinations, orderDate) {
         quantity: it.quantity,
         quantity_unit: it.quantity_unit || '',
         actual_weight: it.actual_weight,
-        actual_weight_unit: it.actual_weight_unit || 'kg',
-        actual_unit_price: it.actual_unit_price,
-        actual_unit_price_unit: it.actual_unit_price_unit || '',
+        actual_weight_unit: it.actual_weight_unit || (it.actual_weight != null ? 'kg' : ''),
+        purchase_price: it.purchase_price,
+        purchase_price_unit: it.purchase_price_unit || '',
         raw_line: it.raw,
       });
     });
