@@ -1102,15 +1102,10 @@ function PriceCheckPanel({ date, orderLines, manuscriptItems, manuscriptItemById
       {err && <div style={{ color: T.warn, marginBottom: 12 }}>{err}</div>}
 
       <section style={card()}>
-        <h3 style={h3()}>LINE実績データを貼り付け</h3>
-        <p style={{ fontSize: 12, color: T.textSub, marginTop: -6, marginBottom: 8 }}>
-          LINEの発注システムからコピーした出荷実績（実目方・仕入価格を含む）をそのまま貼り付けてください。品目ごとに原稿候補を提示します。
-        </p>
         <textarea
           value={lineText}
           onChange={(e) => setLineText(e.target.value)}
           rows={8}
-          placeholder="👤\n見富剛\n未確定\n角倉商店\n→\nわたなべ\n🚚 発送\n9/19\n📦 納品\n9/19午前中\n航空便✈️\n赤ムツ(600g) 2本\n1.13㎏\n仕入 ¥13,000\n送料\n1"
           style={{ width: "100%", fontFamily: "monospace", fontSize: 14, padding: 8, border: `1px solid ${T.border}`, borderRadius: 6 }}
         />
         <div style={{ marginTop: 8 }}>
