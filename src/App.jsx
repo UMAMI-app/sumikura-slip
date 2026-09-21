@@ -1348,7 +1348,7 @@ function InvoicePreview({ invoiceDate, destination, lineItems, showTitle = true,
   const renderLine = (li, idx) => (
     <div
       key={idx}
-      style={{ display: "grid", gridTemplateColumns: ITEM_COLS, columnGap: 10, alignItems: "baseline", fontSize: 20, padding: "4px 0", borderBottom: "1px solid #ddd" }}
+      style={{ display: "grid", gridTemplateColumns: ITEM_COLS, columnGap: 10, alignItems: "baseline", fontSize: 18, padding: "4px 0", borderBottom: "1px solid #ddd" }}
     >
       <span>{li.item_name} {li.origin && `(${li.origin})`}</span>
       <span style={{ textAlign: "right" }}>
@@ -1363,7 +1363,7 @@ function InvoicePreview({ invoiceDate, destination, lineItems, showTitle = true,
 
   const itemHeader = (sameDay.length > 0 || takkyu.length > 0) && (
     <div
-      style={{ display: "grid", gridTemplateColumns: ITEM_COLS, columnGap: 10, fontSize: 13, color: "#888", borderBottom: "1px solid #ddd", paddingBottom: 4, marginTop: 4 }}
+      style={{ display: "grid", gridTemplateColumns: ITEM_COLS, columnGap: 10, fontSize: 11.7, color: "#888", borderBottom: "1px solid #ddd", paddingBottom: 4, marginTop: 4 }}
     >
       <span>品目</span>
       <span style={{ textAlign: "right" }}>目方</span>
@@ -1375,19 +1375,19 @@ function InvoicePreview({ invoiceDate, destination, lineItems, showTitle = true,
   return (
     <div
       className="invoice-store-block"
-      style={{ width: "100%", boxSizing: "border-box", background: "#fff", padding: "8mm 10mm", fontFamily: "system-ui, sans-serif", color: "#222" }}
+      style={{ width: "100%", boxSizing: "border-box", background: "#fff", padding: "2.7mm 10mm", fontFamily: "system-ui, sans-serif", color: "#222" }}
     >
       {showTitle ? (
         <div style={{ display: "flex", alignItems: "baseline", gap: 18, borderBottom: "2px solid #333", paddingBottom: 6, marginBottom: 10 }}>
-          <h2 style={{ fontSize: 20, margin: 0 }}>納品書</h2>
-          <span style={{ fontSize: 20, color: "#555" }}>{formatMD(invoiceDate)}（{weekdayJa(invoiceDate)}）</span>
+          <h2 style={{ fontSize: 18, margin: 0 }}>納品書</h2>
+          <span style={{ fontSize: 18, color: "#555" }}>{formatMD(invoiceDate)}（{weekdayJa(invoiceDate)}）</span>
         </div>
       ) : (
-        <div style={{ borderTop: "1px solid #999", margin: "5px 0" }} />
+        <div style={{ borderTop: "1px solid #999", margin: "1.7px 0" }} />
       )}
       {/* 2026-09-21 追加変更（kento指示）: 「宅急便」の発送/着日は別行の見出しにせず、
           店舗名と同じ行にまとめて記載する。 */}
-      <p style={{ fontSize: 20, fontWeight: 700, margin: "0 0 10px" }}>
+      <p style={{ fontSize: 18, fontWeight: 700, margin: "0 0 10px" }}>
         {destination} 様
         {takkyuGroups.length > 0 && (
           <span style={{ marginLeft: 14, fontWeight: 400 }}>
@@ -1401,10 +1401,10 @@ function InvoicePreview({ invoiceDate, destination, lineItems, showTitle = true,
       {takkyu.map(renderLine)}
 
       {showTotals && (
-        <div style={{ marginTop: 14, borderTop: "2px solid #333", paddingTop: 8, fontSize: 13 }}>
+        <div style={{ marginTop: 14, borderTop: "2px solid #333", paddingTop: 8, fontSize: 11.7 }}>
           <div style={{ display: "flex", justifyContent: "space-between" }}><span>商品合計</span><span>{fmtYen(totals.subtotal)}</span></div>
           <div style={{ display: "flex", justifyContent: "space-between" }}><span>消費税(8%)</span><span>{fmtYen(totals.tax)}</span></div>
-          <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: 15, marginTop: 4 }}><span>税込合計</span><span>{fmtYen(totals.total)}</span></div>
+          <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: 13.5, marginTop: 4 }}><span>税込合計</span><span>{fmtYen(totals.total)}</span></div>
         </div>
       )}
     </div>
@@ -1585,10 +1585,10 @@ function InvoicePanel({ date }) {
                     />
                   ))}
                   <div style={{ padding: "0 10mm 8mm", background: "#fff", fontFamily: "system-ui, sans-serif", color: "#222" }}>
-                    <div style={{ borderTop: "2px solid #333", paddingTop: 8, fontSize: 13 }}>
+                    <div style={{ borderTop: "2px solid #333", paddingTop: 8, fontSize: 11.7 }}>
                       <div style={{ display: "flex", justifyContent: "space-between" }}><span>商品合計</span><span>{fmtYen(grandTotals.subtotal)}</span></div>
                       <div style={{ display: "flex", justifyContent: "space-between" }}><span>消費税(8%)</span><span>{fmtYen(grandTotals.tax)}</span></div>
-                      <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: 15, marginTop: 4 }}><span>税込合計</span><span>{fmtYen(grandTotals.total)}</span></div>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: 13.5, marginTop: 4 }}><span>税込合計</span><span>{fmtYen(grandTotals.total)}</span></div>
                     </div>
                   </div>
                 </div>
