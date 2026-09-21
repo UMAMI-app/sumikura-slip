@@ -1342,7 +1342,7 @@ function InvoicePreview({ invoiceDate, destination, lineItems, showTitle = true,
   });
 
   const renderLine = (li, idx) => (
-    <div key={idx} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "4px 0", borderBottom: "1px dashed #ddd" }}>
+    <div key={idx} style={{ display: "flex", justifyContent: "space-between", fontSize: 20, padding: "4px 0", borderBottom: "1px dashed #ddd" }}>
       <span>
         <span>{li.item_name} {li.origin && `(${li.origin})`}</span>
         <span style={{ marginLeft: 16 }}>
@@ -1369,18 +1369,19 @@ function InvoicePreview({ invoiceDate, destination, lineItems, showTitle = true,
       ) : (
         <div style={{ borderTop: "1px solid #ccc", margin: "5px 0" }} />
       )}
-      <p style={{ fontSize: 15, fontWeight: 700, margin: "0 0 10px" }}>{destination} 様</p>
+      {/* 2026-09-21 追加変更（kento指示）: 「宅急便」の発送/着日は別行の見出しにせず、
+          店舗名と同じ行にまとめて記載する。 */}
+      <p style={{ fontSize: 20, fontWeight: 700, margin: "0 0 10px" }}>
+        {destination} 様
+        {takkyuGroups.length > 0 && (
+          <span style={{ marginLeft: 14, fontWeight: 400 }}>
+            （宅急便 {takkyuGroups.map((g) => `${formatMD(g.ship)}発送→${formatMD(g.arrival)}着`).join("、")}）
+          </span>
+        )}
+      </p>
 
       {sameDay.map(renderLine)}
-
-      {takkyuGroups.map((g) => (
-        <div key={g.key}>
-          <div style={{ borderTop: "1px dashed #999", margin: "10px 0 6px", paddingTop: 6, fontSize: 12, color: "#555" }}>
-            宅急便 {formatMD(g.ship)}発送 → {formatMD(g.arrival)}着
-          </div>
-          {g.items.map(renderLine)}
-        </div>
-      ))}
+      {takkyu.map(renderLine)}
 
       {showTotals && (
         <div style={{ marginTop: 14, borderTop: "2px solid #333", paddingTop: 8, fontSize: 13 }}>
