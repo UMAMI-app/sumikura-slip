@@ -1341,18 +1341,34 @@ function InvoicePreview({ invoiceDate, destination, lineItems, showTitle = true,
     g.items.push(li);
   });
 
+  // 2026-09-21 追加変更（kento指示）: 品目・目方・単価・金額を列として揃える。
+  // 品目と金額の列幅を広めに確保。
+  const ITEM_COLS = "3fr 1.2fr 1.4fr 1.6fr";
+
   const renderLine = (li, idx) => (
-    <div key={idx} style={{ display: "flex", justifyContent: "space-between", fontSize: 20, padding: "4px 0", borderBottom: "1px dashed #ddd" }}>
-      <span>
-        <span>{li.item_name} {li.origin && `(${li.origin})`}</span>
-        <span style={{ marginLeft: 16 }}>
-          {li.quantity ? `${li.quantity}${li.quantity_unit || ""}` : ""} {li.weight ? `${li.weight}kg` : ""}
-        </span>
+    <div
+      key={idx}
+      style={{ display: "grid", gridTemplateColumns: ITEM_COLS, columnGap: 10, alignItems: "baseline", fontSize: 20, padding: "4px 0", borderBottom: "1px dashed #ddd" }}
+    >
+      <span>{li.item_name} {li.origin && `(${li.origin})`}</span>
+      <span style={{ textAlign: "right" }}>
+        {li.quantity ? `${li.quantity}${li.quantity_unit || ""}` : ""}{li.weight ? ` ${li.weight}kg` : ""}
       </span>
-      <span>
-        <span>{li.unit_price ? `¥${li.unit_price.toLocaleString("ja-JP")}/${li.price_unit || ""}` : ""}</span>
-        <span style={{ marginLeft: 16 }}>{fmtYen(li.amount)}</span>
+      <span style={{ textAlign: "right" }}>
+        {li.unit_price ? `¥${li.unit_price.toLocaleString("ja-JP")}/${li.price_unit || ""}` : ""}
       </span>
+      <span style={{ textAlign: "right", fontWeight: 600 }}>{fmtYen(li.amount)}</span>
+    </div>
+  );
+
+  const itemHeader = (sameDay.length > 0 || takkyu.length > 0) && (
+    <div
+      style={{ display: "grid", gridTemplateColumns: ITEM_COLS, columnGap: 10, fontSize: 13, color: "#888", borderBottom: "1px solid #999", paddingBottom: 4, marginTop: 4 }}
+    >
+      <span>品目</span>
+      <span style={{ textAlign: "right" }}>目方</span>
+      <span style={{ textAlign: "right" }}>単価</span>
+      <span style={{ textAlign: "right" }}>金額</span>
     </div>
   );
 
@@ -1380,6 +1396,7 @@ function InvoicePreview({ invoiceDate, destination, lineItems, showTitle = true,
         )}
       </p>
 
+      {itemHeader}
       {sameDay.map(renderLine)}
       {takkyu.map(renderLine)}
 

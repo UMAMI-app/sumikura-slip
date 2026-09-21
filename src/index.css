@@ -10,6 +10,11 @@ html,
 body {
   margin: 0;
   padding: 0;
+  /* iOS Safariが横スクロールする幅広ブロック内のテキストを勝手に拡大解釈する
+     ことがある（納品書プレビューの店舗名だけ大きく見えた原因。kento指示: 2026-09-21）。
+     明示的に無効化してCSSで指定したサイズ通りに表示させる。 */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 body {
