@@ -28,32 +28,3 @@ button {
   font-family: inherit;
 }
 
-/* 納品書タブ「印刷する」ボタン用（kento指示: 2026-09-21）。
-   #invoice-print-area（全店舗ぶんの納品書プレビューをまとめたもの）だけを印刷し、
-   それ以外（ヘッダーのタブ・含める商品の編集テーブル・ボタン類など）は印刷しない。
-   A4サイズを指定し、各店舗ブロック(.invoice-store-block)はページの途中で
-   切れないようにする。1ページに収まらない分は自然に2ページ目以降へ続く。 */
-@media print {
-  body * {
-    visibility: hidden;
-  }
-  #invoice-print-area,
-  #invoice-print-area * {
-    visibility: visible;
-  }
-  #invoice-print-area {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    margin: 0;
-  }
-  .invoice-store-block {
-    break-inside: avoid;
-    page-break-inside: avoid;
-  }
-  @page {
-    size: A4;
-    margin: 10mm;
-  }
-}

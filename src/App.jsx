@@ -1344,10 +1344,14 @@ function InvoicePreview({ invoiceDate, destination, lineItems, showTitle = true,
   const renderLine = (li, idx) => (
     <div key={idx} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "4px 0", borderBottom: "1px dashed #ddd" }}>
       <span>
-        {li.item_name} {li.origin && `(${li.origin})`} {li.quantity ? `${li.quantity}${li.quantity_unit || ""}` : ""} {li.weight ? `${li.weight}kg` : ""}
+        <span>{li.item_name} {li.origin && `(${li.origin})`}</span>
+        <span style={{ marginLeft: 16 }}>
+          {li.quantity ? `${li.quantity}${li.quantity_unit || ""}` : ""} {li.weight ? `${li.weight}kg` : ""}
+        </span>
       </span>
       <span>
-        {li.unit_price ? `¥${li.unit_price.toLocaleString("ja-JP")}/${li.price_unit || ""}` : ""} {fmtYen(li.amount)}
+        <span>{li.unit_price ? `¥${li.unit_price.toLocaleString("ja-JP")}/${li.price_unit || ""}` : ""}</span>
+        <span style={{ marginLeft: 16 }}>{fmtYen(li.amount)}</span>
       </span>
     </div>
   );
@@ -1360,10 +1364,10 @@ function InvoicePreview({ invoiceDate, destination, lineItems, showTitle = true,
       {showTitle ? (
         <div style={{ display: "flex", alignItems: "baseline", gap: 18, borderBottom: "2px solid #333", paddingBottom: 6, marginBottom: 10 }}>
           <h2 style={{ fontSize: 20, margin: 0 }}>納品書</h2>
-          <span style={{ fontSize: 13, color: "#555" }}>{formatMD(invoiceDate)}（{weekdayJa(invoiceDate)}）</span>
+          <span style={{ fontSize: 20, color: "#555" }}>{formatMD(invoiceDate)}（{weekdayJa(invoiceDate)}）</span>
         </div>
       ) : (
-        <div style={{ borderTop: "1px solid #ccc", margin: "10px 0" }} />
+        <div style={{ borderTop: "1px solid #ccc", margin: "5px 0" }} />
       )}
       <p style={{ fontSize: 15, fontWeight: 700, margin: "0 0 10px" }}>{destination} 様</p>
 
@@ -1483,8 +1487,40 @@ function InvoicePanel({ date }) {
     setSavingAll(false);
   };
 
-  const handlePrintAll = () => {
-    window.print();
+  // 2026-09-21 追加変更（kento指示）: 「印刷する」ボタンをやめて、html2canvas+jsPDF で
+  // #invoice-print-area をそのままPDFファイルとしてダウンロードする「PDFで保存」ボタンにする。
+  // A4の縦幅に収まらない分は自動で複数ページに分割する。
+  const [savingPdf, setSavingPdf] = useState(false);
+  const savePdfAll = async () => {
+    const node = document.getElementById("invoice-print-area");
+    if (!node) return;
+    setSavingPdf(true);
+    setErr("");
+    try {
+      const [{ default: html2canvas }, { jsPDF }] = await Promise.all([import("html2canvas"), import("jspdf")]);
+      const canvas = await html2canvas(node, { backgroundColor: "#fff", scale: 2 });
+      const imgData = canvas.toDataURL("image/png");
+      const pdf = new jsPDF({ unit: "mm", format: "a4" });
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const imgWidth = pageWidth;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      let heightLeft = imgHeight;
+      let position = 0;
+      pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
+      while (heightLeft > 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+      }
+      pdf.save(`納品書_${date}.pdf`);
+    } catch (e) {
+      setErr("PDF保存に失敗しました: " + (e.message || e));
+    } finally {
+      setSavingPdf(false);
+    }
   };
 
   const printableGroups = byDestination.filter((g) => g.lineItems.length > 0);
@@ -1516,7 +1552,7 @@ function InvoicePanel({ date }) {
             <section style={card()}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
                 <h3 style={h3()}>プレビュー（A4印刷用）</h3>
-                <button style={btn(true)} onClick={handlePrintAll}>印刷する</button>
+                <button style={btn(true)} disabled={savingPdf} onClick={savePdfAll}>{savingPdf ? "PDF作成中..." : "PDFで保存"}</button>
               </div>
               <div style={{ overflowX: "auto" }}>
                 <div id="invoice-print-area" style={{ width: "210mm", maxWidth: "none", margin: "0 auto", background: "#fff", border: `1px solid ${T.softBorder}` }}>
