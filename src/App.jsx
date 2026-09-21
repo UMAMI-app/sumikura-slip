@@ -1627,14 +1627,19 @@ function HistoryPanel() {
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
-  const [selected, setSelected] = useState(null); // invoice row
-  const [selectedItems, setSelectedItems] = useState([]);
+
+  // 2026-09-21 追加変更（kento指示）: 履歴は店舗ごとではなく日付単位の一覧にする。
+  // タップするとその日にまとめて作成した納品書（全店舗分）をプレビューできる。
+  const [selectedDate, setSelectedDate] = useState(null);
+  const [selectedGroups, setSelectedGroups] = useState([]); // [{ invoice, items }]（店舗ごと。表示は日付単位でまとめる）
+  const [loadingDetail, setLoadingDetail] = useState(false);
   const previewRef = useRef(null);
 
   const search = useCallback(async () => {
     setLoading(true);
     setErr("");
-    setSelected(null);
+    setSelectedDate(null);
+    setSelectedGroups([]);
     try {
       const rows = await db.list(
         "invoices",
@@ -1650,62 +1655,100 @@ function HistoryPanel() {
 
   useEffect(() => { search(); }, [search]);
 
-  const openInvoice = async (inv) => {
-    setSelected(inv);
-    setSelectedItems([]);
+  // invoicesを日付単位にグループ化（一覧・削除・プレビューはすべてこの単位で行う）。
+  const dateGroups = useMemo(() => {
+    const groups = [];
+    invoices.forEach((inv) => {
+      let g = groups.find((x) => x.date === inv.invoice_date);
+      if (!g) { g = { date: inv.invoice_date, invoices: [], total: 0 }; groups.push(g); }
+      g.invoices.push(inv);
+      g.total += inv.total || 0;
+    });
+    return groups;
+  }, [invoices]);
+
+  const openDate = async (group) => {
+    setSelectedDate(group.date);
+    setSelectedGroups([]);
+    setLoadingDetail(true);
+    setErr("");
     try {
-      const items = await db.list("invoice_line_items", `?invoice_id=eq.${inv.id}&order=sort_order.asc`);
-      setSelectedItems(items);
+      const groups = await Promise.all(
+        group.invoices.map(async (inv) => {
+          const items = await db.list("invoice_line_items", `?invoice_id=eq.${inv.id}&order=sort_order.asc`);
+          return { invoice: inv, items };
+        })
+      );
+      groups.sort((a, b) => a.invoice.destination.localeCompare(b.invoice.destination, "ja"));
+      setSelectedGroups(groups);
     } catch (e) {
       setErr("納品書明細の取得に失敗しました: " + (e.message || e));
+    } finally {
+      setLoadingDetail(false);
     }
   };
 
-  // 2026-09-21 追加変更（kento指示）: 納品書履歴の削除機能。
-  // invoice_line_items（明細）とinvoices（本体）を削除し、元になった
-  // line_actual_itemsのinvoice_idをnullに戻す（納品書作成ページで
-  // 「未保存」として再度扱えるようにするため）。
-  const [deletingId, setDeletingId] = useState(null);
-  const deleteInvoice = async (inv) => {
-    if (!window.confirm(`${inv.destination} の納品書（${inv.invoice_date}）を削除しますか？\nこの操作は取り消せません。`)) return;
-    setDeletingId(inv.id);
+  // 納品書履歴の削除機能。その日にある全店舗分のinvoice_line_items（明細）と
+  // invoices（本体）を削除し、元になったline_actual_itemsのinvoice_idをnullに
+  // 戻す（納品書作成ページで「未保存」として再度扱えるようにするため）。
+  const [deletingDate, setDeletingDate] = useState(null);
+  const deleteDate = async (group) => {
+    if (!window.confirm(`${group.date} の納品書（${group.invoices.length}件）を削除しますか？\nこの操作は取り消せません。`)) return;
+    setDeletingDate(group.date);
     setErr("");
     try {
-      await db.removeWhere("invoice_line_items", `?invoice_id=eq.${inv.id}`);
-      await db.updateWhere("line_actual_items", `?invoice_id=eq.${inv.id}`, { invoice_id: null });
-      await db.remove("invoices", inv.id);
-      if (selected && selected.id === inv.id) {
-        setSelected(null);
-        setSelectedItems([]);
+      for (const inv of group.invoices) {
+        await db.removeWhere("invoice_line_items", `?invoice_id=eq.${inv.id}`);
+        await db.updateWhere("line_actual_items", `?invoice_id=eq.${inv.id}`, { invoice_id: null });
+        await db.remove("invoices", inv.id);
+      }
+      if (selectedDate === group.date) {
+        setSelectedDate(null);
+        setSelectedGroups([]);
       }
       await search();
     } catch (e) {
       setErr("削除に失敗しました: " + (e.message || e));
     } finally {
-      setDeletingId(null);
+      setDeletingDate(null);
     }
   };
 
-  const downloadImage = async () => {
-    if (!previewRef.current || !selected) return;
+  const grandTotals = buildInvoiceTotals(selectedGroups.flatMap((g) => g.items));
+
+  // 2026-09-21 追加変更（kento指示）: 履歴側のダウンロードも、納品書作成ページの
+  // 「PDFで保存」と同じくその日の全店舗分をまとめて1つのPDFにする。
+  const [savingPdf, setSavingPdf] = useState(false);
+  const savePdf = async () => {
+    if (!previewRef.current || !selectedDate) return;
+    setSavingPdf(true);
+    setErr("");
     try {
-      const html2canvas = (await import("html2canvas")).default;
+      const [{ default: html2canvas }, { jsPDF }] = await Promise.all([import("html2canvas"), import("jspdf")]);
       const canvas = await html2canvas(previewRef.current, { backgroundColor: "#fff", scale: 2 });
-      const link = document.createElement("a");
-      link.download = `納品書_${selected.invoice_date}_${selected.destination}.png`;
-      link.href = canvas.toDataURL("image/png");
-      link.click();
+      const imgData = canvas.toDataURL("image/png");
+      const pdf = new jsPDF({ unit: "mm", format: "a4" });
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const imgWidth = pageWidth;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      let heightLeft = imgHeight;
+      let position = 0;
+      pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
+      while (heightLeft > 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+      }
+      pdf.save(`納品書_${selectedDate}.pdf`);
     } catch (e) {
-      setErr("画像出力に失敗しました: " + (e.message || e));
+      setErr("PDF保存に失敗しました: " + (e.message || e));
+    } finally {
+      setSavingPdf(false);
     }
   };
-
-  const grouped = [];
-  invoices.forEach((inv) => {
-    let g = grouped.find((x) => x.date === inv.invoice_date);
-    if (!g) { g = { date: inv.invoice_date, invoices: [] }; grouped.push(g); }
-    g.invoices.push(inv);
-  });
 
   return (
     <div>
@@ -1725,48 +1768,65 @@ function HistoryPanel() {
         <section style={{ ...card(), flex: "1 1 280px" }}>
           {loading ? (
             <p>読み込み中...</p>
-          ) : grouped.length === 0 ? (
+          ) : dateGroups.length === 0 ? (
             <p style={{ color: T.textSub, fontSize: 13 }}>該当する納品書はありません。</p>
           ) : (
-            grouped.map((g) => (
-              <div key={g.date} style={{ marginBottom: 14 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: T.green, marginBottom: 4 }}>
+            dateGroups.map((g) => (
+              <div
+                key={g.date}
+                style={{
+                  display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 8px",
+                  borderRadius: 6, fontSize: 13,
+                  background: selectedDate === g.date ? T.panel : "transparent",
+                }}
+              >
+                <span onClick={() => openDate(g)} style={{ cursor: "pointer", flex: 1 }}>
                   {g.date}（{weekdayJa(g.date)}）
-                </div>
-                {g.invoices.map((inv) => (
-                  <div
-                    key={inv.id}
-                    style={{
-                      display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 8px",
-                      borderRadius: 6, fontSize: 13,
-                      background: selected && selected.id === inv.id ? T.panel : "transparent",
-                    }}
-                  >
-                    <span onClick={() => openInvoice(inv)} style={{ cursor: "pointer", flex: 1 }}>{inv.destination}</span>
-                    <span onClick={() => openInvoice(inv)} style={{ cursor: "pointer", marginRight: 10 }}>{fmtYen(inv.total)}</span>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); deleteInvoice(inv); }}
-                      disabled={deletingId === inv.id}
-                      title="削除"
-                      style={{ border: "none", background: "transparent", color: T.warn, cursor: "pointer", fontSize: 12, padding: "2px 4px" }}
-                    >
-                      {deletingId === inv.id ? "削除中..." : "削除"}
-                    </button>
-                  </div>
-                ))}
+                </span>
+                <span onClick={() => openDate(g)} style={{ cursor: "pointer", marginRight: 10 }}>{fmtYen(g.total)}</span>
+                <button
+                  onClick={(e) => { e.stopPropagation(); deleteDate(g); }}
+                  disabled={deletingDate === g.date}
+                  title="削除"
+                  style={{ border: "none", background: "transparent", color: T.warn, cursor: "pointer", fontSize: 12, padding: "2px 4px" }}
+                >
+                  {deletingDate === g.date ? "削除中..." : "削除"}
+                </button>
               </div>
             ))
           )}
         </section>
 
-        {selected && (
+        {selectedDate && (
           <section style={{ ...card(), flex: "1 1 400px" }}>
-            <div ref={previewRef}>
-              <InvoicePreview invoiceDate={selected.invoice_date} destination={selected.destination} lineItems={selectedItems} />
-            </div>
-            <div style={{ marginTop: 12, textAlign: "center" }}>
-              <button style={btn()} onClick={downloadImage}>PNG画像として保存</button>
-            </div>
+            {loadingDetail ? (
+              <p>読み込み中...</p>
+            ) : (
+              <>
+                <div ref={previewRef} style={{ background: "#fff" }}>
+                  {selectedGroups.map((g, idx) => (
+                    <InvoicePreview
+                      key={g.invoice.id}
+                      invoiceDate={selectedDate}
+                      destination={g.invoice.destination}
+                      lineItems={g.items}
+                      showTitle={idx === 0}
+                      showTotals={false}
+                    />
+                  ))}
+                  <div style={{ padding: "0 10mm 8mm", background: "#fff", fontFamily: "system-ui, sans-serif", color: "#222" }}>
+                    <div style={{ borderTop: "2px solid #333", paddingTop: 7.2, fontSize: 16.2 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between" }}><span>商品合計</span><span>{fmtYen(grandTotals.subtotal)}</span></div>
+                      <div style={{ display: "flex", justifyContent: "space-between" }}><span>消費税(8%)</span><span>{fmtYen(grandTotals.tax)}</span></div>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: 16.2, marginTop: 3.6 }}><span>税込合計</span><span>{fmtYen(grandTotals.total)}</span></div>
+                    </div>
+                  </div>
+                </div>
+                <div style={{ marginTop: 12, textAlign: "center" }}>
+                  <button style={btn(true)} disabled={savingPdf} onClick={savePdf}>{savingPdf ? "PDF作成中..." : "PDFで保存"}</button>
+                </div>
+              </>
+            )}
           </section>
         )}
       </div>
