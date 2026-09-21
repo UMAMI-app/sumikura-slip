@@ -1348,7 +1348,7 @@ function InvoicePreview({ invoiceDate, destination, lineItems, showTitle = true,
   const renderLine = (li, idx) => (
     <div
       key={idx}
-      style={{ display: "grid", gridTemplateColumns: ITEM_COLS, columnGap: 10, alignItems: "baseline", fontSize: 20, padding: "4px 0", borderBottom: "1px dashed #999" }}
+      style={{ display: "grid", gridTemplateColumns: ITEM_COLS, columnGap: 10, alignItems: "baseline", fontSize: 20, padding: "4px 0", borderBottom: "1px solid #ddd" }}
     >
       <span>{li.item_name} {li.origin && `(${li.origin})`}</span>
       <span style={{ textAlign: "right" }}>
