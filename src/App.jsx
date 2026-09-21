@@ -1156,8 +1156,8 @@ function ManuscriptPurchasePaste({ date }) {
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 6 }}>
           <label style={{ fontSize: 11, color: T.textSub }}>
             仕入単価
-            <input style={{ ...inputStyle(), width: 70, marginLeft: 4 }} value={it.purchase_price ?? ""} onChange={(e) => updateItem(it.key, { purchase_price: e.target.value ? parseFloat(e.target.value) : null })} />
             <input style={{ ...inputStyle(), width: 50, marginLeft: 4 }} placeholder="単位" value={it.purchase_price_unit ?? ""} onChange={(e) => updateItem(it.key, { purchase_price_unit: e.target.value })} />
+            <input style={{ ...inputStyle(), width: 70, marginLeft: 4 }} value={it.purchase_price ?? ""} onChange={(e) => updateItem(it.key, { purchase_price: e.target.value ? parseFloat(e.target.value) : null })} />
           </label>
           <span style={{ fontSize: 11, color: T.textSub }}>仕入金額: {it.purchase_amount != null ? fmtYen(it.purchase_amount) : "―"}</span>
         </div>
@@ -1434,15 +1434,15 @@ function LineActualPaste({ date }) {
           <label style={{ fontSize: 11, color: T.textSub }}>
             仕入価格
             <input
-              style={{ ...inputStyle(), width: 70, marginLeft: 4 }}
-              value={it.purchase_price ?? ""}
-              onChange={(e) => updateItem(it.key, { purchase_price: e.target.value ? parseFloat(e.target.value) : null })}
-            />
-            <input
               style={{ ...inputStyle(), width: 50, marginLeft: 4 }}
               placeholder="kg/本"
               value={it.purchase_price_unit ?? ""}
               onChange={(e) => updateItem(it.key, { purchase_price_unit: e.target.value })}
+            />
+            <input
+              style={{ ...inputStyle(), width: 70, marginLeft: 4 }}
+              value={it.purchase_price ?? ""}
+              onChange={(e) => updateItem(it.key, { purchase_price: e.target.value ? parseFloat(e.target.value) : null })}
             />
           </label>
         </div>
