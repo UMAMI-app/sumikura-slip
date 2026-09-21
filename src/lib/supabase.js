@@ -34,6 +34,9 @@ export const db = {
   insert: (table, row) => sbFetch(table, { method: "POST", body: row }),
   insertMany: (table, rows) => sbFetch(table, { method: "POST", body: rows }),
   update: (table, id, data) => sbFetch(table, { method: "PATCH", params: `?id=eq.${id}`, body: data }),
+  // 2026-09-21 追加変更（kento指示）: 納品書履歴の削除機能用。invoice_idなど
+  // 条件に一致する複数行をまとめてPATCHする（1件ずつupdateする手間を省く）。
+  updateWhere: (table, query, data) => sbFetch(table, { method: "PATCH", params: query, body: data }),
   remove: (table, id) => sbFetch(table, { method: "DELETE", params: `?id=eq.${id}` }),
   removeWhere: (table, query) => sbFetch(table, { method: "DELETE", params: query }),
   // keyColの値がすでに存在すればPATCH、無ければPOSTする（商品ごとの単価単位の学習等に使う）。

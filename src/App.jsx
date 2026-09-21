@@ -1649,6 +1649,31 @@ function HistoryPanel() {
     }
   };
 
+  // 2026-09-21 追加変更（kento指示）: 納品書履歴の削除機能。
+  // invoice_line_items（明細）とinvoices（本体）を削除し、元になった
+  // line_actual_itemsのinvoice_idをnullに戻す（納品書作成ページで
+  // 「未保存」として再度扱えるようにするため）。
+  const [deletingId, setDeletingId] = useState(null);
+  const deleteInvoice = async (inv) => {
+    if (!window.confirm(`${inv.destination} の納品書（${inv.invoice_date}）を削除しますか？\nこの操作は取り消せません。`)) return;
+    setDeletingId(inv.id);
+    setErr("");
+    try {
+      await db.removeWhere("invoice_line_items", `?invoice_id=eq.${inv.id}`);
+      await db.updateWhere("line_actual_items", `?invoice_id=eq.${inv.id}`, { invoice_id: null });
+      await db.remove("invoices", inv.id);
+      if (selected && selected.id === inv.id) {
+        setSelected(null);
+        setSelectedItems([]);
+      }
+      await search();
+    } catch (e) {
+      setErr("削除に失敗しました: " + (e.message || e));
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   const downloadImage = async () => {
     if (!previewRef.current || !selected) return;
     try {
@@ -1699,15 +1724,22 @@ function HistoryPanel() {
                 {g.invoices.map((inv) => (
                   <div
                     key={inv.id}
-                    onClick={() => openInvoice(inv)}
                     style={{
-                      display: "flex", justifyContent: "space-between", padding: "6px 8px",
-                      borderRadius: 6, cursor: "pointer", fontSize: 13,
+                      display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 8px",
+                      borderRadius: 6, fontSize: 13,
                       background: selected && selected.id === inv.id ? T.panel : "transparent",
                     }}
                   >
-                    <span>{inv.destination}</span>
-                    <span>{fmtYen(inv.total)}</span>
+                    <span onClick={() => openInvoice(inv)} style={{ cursor: "pointer", flex: 1 }}>{inv.destination}</span>
+                    <span onClick={() => openInvoice(inv)} style={{ cursor: "pointer", marginRight: 10 }}>{fmtYen(inv.total)}</span>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); deleteInvoice(inv); }}
+                      disabled={deletingId === inv.id}
+                      title="削除"
+                      style={{ border: "none", background: "transparent", color: T.warn, cursor: "pointer", fontSize: 12, padding: "2px 4px" }}
+                    >
+                      {deletingId === inv.id ? "削除中..." : "削除"}
+                    </button>
                   </div>
                 ))}
               </div>
