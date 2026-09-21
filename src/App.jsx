@@ -1738,6 +1738,12 @@ function HistoryPanel() {
   }, [invoices]);
 
   const openDate = async (group) => {
+    // 2026-09-21 追加変更（kento指示）: 同じ日付をもう一度タップしたらプレビューを閉じる。
+    if (selectedDate === group.date) {
+      setSelectedDate(null);
+      setSelectedGroups([]);
+      return;
+    }
     setSelectedDate(group.date);
     setSelectedGroups([]);
     setLoadingDetail(true);
@@ -1882,7 +1888,7 @@ function HistoryPanel() {
             ) : (
               <>
                 <A4PreviewScaler ref={previewScalerRef}>
-                  <div ref={previewRef} style={{ background: "#fff" }}>
+                  <div ref={previewRef} style={{ width: "210mm", maxWidth: "none", background: "#fff" }}>
                     {selectedGroups.map((g, idx) => (
                       <InvoicePreview
                         key={g.invoice.id}
