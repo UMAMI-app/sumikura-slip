@@ -1348,7 +1348,7 @@ function InvoicePreview({ invoiceDate, destination, lineItems, showTitle = true,
   const renderLine = (li, idx) => (
     <div
       key={idx}
-      style={{ display: "grid", gridTemplateColumns: ITEM_COLS, columnGap: 10, alignItems: "baseline", fontSize: 20, padding: "4px 0", borderBottom: "1px dashed #ddd" }}
+      style={{ display: "grid", gridTemplateColumns: ITEM_COLS, columnGap: 10, alignItems: "baseline", fontSize: 20, padding: "4px 0", borderBottom: "1px dashed #999" }}
     >
       <span>{li.item_name} {li.origin && `(${li.origin})`}</span>
       <span style={{ textAlign: "right" }}>
@@ -1363,7 +1363,7 @@ function InvoicePreview({ invoiceDate, destination, lineItems, showTitle = true,
 
   const itemHeader = (sameDay.length > 0 || takkyu.length > 0) && (
     <div
-      style={{ display: "grid", gridTemplateColumns: ITEM_COLS, columnGap: 10, fontSize: 13, color: "#888", borderBottom: "1px solid #999", paddingBottom: 4, marginTop: 4 }}
+      style={{ display: "grid", gridTemplateColumns: ITEM_COLS, columnGap: 10, fontSize: 13, color: "#888", borderBottom: "1px solid #ddd", paddingBottom: 4, marginTop: 4 }}
     >
       <span>品目</span>
       <span style={{ textAlign: "right" }}>目方</span>
@@ -1383,7 +1383,7 @@ function InvoicePreview({ invoiceDate, destination, lineItems, showTitle = true,
           <span style={{ fontSize: 20, color: "#555" }}>{formatMD(invoiceDate)}（{weekdayJa(invoiceDate)}）</span>
         </div>
       ) : (
-        <div style={{ borderTop: "1px solid #ccc", margin: "5px 0" }} />
+        <div style={{ borderTop: "1px solid #999", margin: "5px 0" }} />
       )}
       {/* 2026-09-21 追加変更（kento指示）: 「宅急便」の発送/着日は別行の見出しにせず、
           店舗名と同じ行にまとめて記載する。 */}
