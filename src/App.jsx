@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo, Fragment } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo, useImperativeHandle, forwardRef, Fragment } from "react";
 import { db, isSupabaseConfigured } from "./lib/supabase";
 import { extractKadokuraManuscriptItems } from "./lib/manuscriptKadokura";
 import { parseShippingList, cleanDestinationName } from "./lib/shippingList";
@@ -273,8 +273,9 @@ function ManuscriptPanel({ date, items, loading, onSaved }) {
           rows={10}
           style={{ width: "100%", fontFamily: "monospace", fontSize: 16, padding: 8, border: `1px solid ${T.border}`, borderRadius: 6 }}
         />
-        <div style={{ marginTop: 8 }}>
+        <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
           <button style={btn(true)} onClick={handleExtract}>解析する</button>
+          <button style={btn()} onClick={() => { setPasteText(""); setPreview(null); }}>クリア</button>
         </div>
       </section>
 
@@ -1164,8 +1165,9 @@ function LineActualPaste({ date, manuscriptItems, manuscriptItemById }) {
         rows={8}
         style={{ width: "100%", fontFamily: "monospace", fontSize: 14, padding: 8, border: `1px solid ${T.border}`, borderRadius: 6 }}
       />
-      <div style={{ marginTop: 8 }}>
+      <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
         <button style={btn(true)} onClick={handleParse}>解析する</button>
+        <button style={btn()} onClick={() => { setText(""); setPreview(null); }}>クリア</button>
       </div>
 
       {preview && (
@@ -1323,6 +1325,65 @@ function buildLineItemsForInvoice(lines) {
     };
   });
 }
+
+// 2026-09-21 追加変更（kento指示）: 納品書ページ・履歴ページのプレビューを、
+// 実際に書き出すPDFの見た目に近づける（A4ページ全体が画面幅に収まるよう
+// 自動で縮小表示する）。PDF化する瞬間だけ原寸に戻してhtml2canvasで撮影し、
+// 終わったら縮小表示に戻す（withNaturalSizeをrefで公開）。
+const A4PreviewScaler = forwardRef(function A4PreviewScaler({ children }, ref) {
+  const outerRef = useRef(null);
+  const innerRef = useRef(null);
+
+  const applyScale = () => {
+    const outer = outerRef.current;
+    const inner = innerRef.current;
+    if (!outer || !inner) return;
+    const MM_TO_PX = 96 / 25.4; // CSS仕様上の固定値（1mm ≈ 3.78px）
+    const naturalWidthPx = 210 * MM_TO_PX;
+    const containerWidth = outer.clientWidth;
+    const scale = containerWidth > 0 ? Math.min(1, containerWidth / naturalWidthPx) : 1;
+    inner.style.transform = `scale(${scale})`;
+    outer.style.height = `${inner.offsetHeight * scale}px`;
+  };
+
+  useEffect(() => {
+    applyScale();
+    const ro = new ResizeObserver(() => applyScale());
+    if (outerRef.current) ro.observe(outerRef.current);
+    if (innerRef.current) ro.observe(innerRef.current);
+    return () => ro.disconnect();
+  }, []);
+
+  useImperativeHandle(ref, () => ({
+    withNaturalSize: async (fn) => {
+      const inner = innerRef.current;
+      const outer = outerRef.current;
+      if (!inner || !outer) return fn();
+      const prevTransform = inner.style.transform;
+      const prevOverflow = outer.style.overflow;
+      const prevHeight = outer.style.height;
+      inner.style.transform = "none";
+      outer.style.overflow = "visible";
+      outer.style.height = "auto";
+      try {
+        return await fn();
+      } finally {
+        inner.style.transform = prevTransform;
+        outer.style.overflow = prevOverflow;
+        outer.style.height = prevHeight;
+        applyScale();
+      }
+    },
+  }));
+
+  return (
+    <div ref={outerRef} style={{ width: "100%", overflow: "hidden" }}>
+      <div ref={innerRef} style={{ display: "inline-block", transformOrigin: "top left" }}>
+        {children}
+      </div>
+    </div>
+  );
+});
 
 function InvoicePreview({ invoiceDate, destination, lineItems, showTitle = true, showTotals = true }) {
   const sameDay = lineItems.filter((li) => isSameDayCategory(li.delivery_category));
@@ -1525,12 +1586,13 @@ function InvoicePanel({ date: initialDate }) {
   // #invoice-print-area をそのままPDFファイルとしてダウンロードする「PDFで保存」ボタンにする。
   // A4の縦幅に収まらない分は自動で複数ページに分割する。
   const [savingPdf, setSavingPdf] = useState(false);
+  const previewScalerRef = useRef(null);
   const savePdfAll = async () => {
     const node = document.getElementById("invoice-print-area");
     if (!node) return;
     setSavingPdf(true);
     setErr("");
-    try {
+    const capture = async () => {
       const [{ default: html2canvas }, { jsPDF }] = await Promise.all([import("html2canvas"), import("jspdf")]);
       const canvas = await html2canvas(node, { backgroundColor: "#fff", scale: 2 });
       const imgData = canvas.toDataURL("image/png");
@@ -1550,6 +1612,14 @@ function InvoicePanel({ date: initialDate }) {
         heightLeft -= pageHeight;
       }
       pdf.save(`納品書_${date}.pdf`);
+    };
+    try {
+      // PDF化する瞬間だけプレビューの縮小表示を解除し、原寸で撮影する
+      if (previewScalerRef.current) {
+        await previewScalerRef.current.withNaturalSize(capture);
+      } else {
+        await capture();
+      }
     } catch (e) {
       setErr("PDF保存に失敗しました: " + (e.message || e));
     } finally {
@@ -1591,7 +1661,7 @@ function InvoicePanel({ date: initialDate }) {
                 <h3 style={h3()}>プレビュー（A4印刷用）</h3>
                 <button style={btn(true)} disabled={savingPdf} onClick={savePdfAll}>{savingPdf ? "PDF作成中..." : "PDFで保存"}</button>
               </div>
-              <div style={{ overflowX: "auto" }}>
+              <A4PreviewScaler ref={previewScalerRef}>
                 <div id="invoice-print-area" style={{ width: "210mm", maxWidth: "none", margin: "0 auto", background: "#fff", border: `1px solid ${T.softBorder}` }}>
                   {printableGroups.map((g, idx) => (
                     <InvoicePreview
@@ -1611,7 +1681,7 @@ function InvoicePanel({ date: initialDate }) {
                     </div>
                   </div>
                 </div>
-              </div>
+              </A4PreviewScaler>
             </section>
           )}
         </>
@@ -1719,11 +1789,12 @@ function HistoryPanel() {
   // 2026-09-21 追加変更（kento指示）: 履歴側のダウンロードも、納品書作成ページの
   // 「PDFで保存」と同じくその日の全店舗分をまとめて1つのPDFにする。
   const [savingPdf, setSavingPdf] = useState(false);
+  const previewScalerRef = useRef(null);
   const savePdf = async () => {
     if (!previewRef.current || !selectedDate) return;
     setSavingPdf(true);
     setErr("");
-    try {
+    const capture = async () => {
       const [{ default: html2canvas }, { jsPDF }] = await Promise.all([import("html2canvas"), import("jspdf")]);
       const canvas = await html2canvas(previewRef.current, { backgroundColor: "#fff", scale: 2 });
       const imgData = canvas.toDataURL("image/png");
@@ -1743,6 +1814,13 @@ function HistoryPanel() {
         heightLeft -= pageHeight;
       }
       pdf.save(`納品書_${selectedDate}.pdf`);
+    };
+    try {
+      if (previewScalerRef.current) {
+        await previewScalerRef.current.withNaturalSize(capture);
+      } else {
+        await capture();
+      }
     } catch (e) {
       setErr("PDF保存に失敗しました: " + (e.message || e));
     } finally {
@@ -1803,25 +1881,27 @@ function HistoryPanel() {
               <p>読み込み中...</p>
             ) : (
               <>
-                <div ref={previewRef} style={{ background: "#fff" }}>
-                  {selectedGroups.map((g, idx) => (
-                    <InvoicePreview
-                      key={g.invoice.id}
-                      invoiceDate={selectedDate}
-                      destination={g.invoice.destination}
-                      lineItems={g.items}
-                      showTitle={idx === 0}
-                      showTotals={false}
-                    />
-                  ))}
-                  <div style={{ padding: "0 10mm 8mm", background: "#fff", fontFamily: "system-ui, sans-serif", color: "#222" }}>
-                    <div style={{ borderTop: "2px solid #333", paddingTop: 7.2, fontSize: 16.2 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between" }}><span>商品合計</span><span>{fmtYen(grandTotals.subtotal)}</span></div>
-                      <div style={{ display: "flex", justifyContent: "space-between" }}><span>消費税(8%)</span><span>{fmtYen(grandTotals.tax)}</span></div>
-                      <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: 16.2, marginTop: 3.6 }}><span>税込合計</span><span>{fmtYen(grandTotals.total)}</span></div>
+                <A4PreviewScaler ref={previewScalerRef}>
+                  <div ref={previewRef} style={{ background: "#fff" }}>
+                    {selectedGroups.map((g, idx) => (
+                      <InvoicePreview
+                        key={g.invoice.id}
+                        invoiceDate={selectedDate}
+                        destination={g.invoice.destination}
+                        lineItems={g.items}
+                        showTitle={idx === 0}
+                        showTotals={false}
+                      />
+                    ))}
+                    <div style={{ padding: "0 10mm 8mm", background: "#fff", fontFamily: "system-ui, sans-serif", color: "#222" }}>
+                      <div style={{ borderTop: "2px solid #333", paddingTop: 7.2, fontSize: 16.2 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between" }}><span>商品合計</span><span>{fmtYen(grandTotals.subtotal)}</span></div>
+                        <div style={{ display: "flex", justifyContent: "space-between" }}><span>消費税(8%)</span><span>{fmtYen(grandTotals.tax)}</span></div>
+                        <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: 16.2, marginTop: 3.6 }}><span>税込合計</span><span>{fmtYen(grandTotals.total)}</span></div>
+                      </div>
                     </div>
                   </div>
-                </div>
+                </A4PreviewScaler>
                 <div style={{ marginTop: 12, textAlign: "center" }}>
                   <button style={btn(true)} disabled={savingPdf} onClick={savePdf}>{savingPdf ? "PDF作成中..." : "PDFで保存"}</button>
                 </div>
