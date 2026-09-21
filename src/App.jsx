@@ -1378,16 +1378,16 @@ function InvoicePreview({ invoiceDate, destination, lineItems, showTitle = true,
       style={{ width: "100%", boxSizing: "border-box", background: "#fff", padding: "2.7mm 10mm", fontFamily: "system-ui, sans-serif", color: "#222" }}
     >
       {showTitle ? (
-        <div style={{ display: "flex", alignItems: "baseline", gap: 18, borderBottom: "2px solid #333", paddingBottom: 6, marginBottom: 10 }}>
-          <h2 style={{ fontSize: 18, margin: 0 }}>納品書</h2>
-          <span style={{ fontSize: 18, color: "#555" }}>{formatMD(invoiceDate)}（{weekdayJa(invoiceDate)}）</span>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 16.2, borderBottom: "2px solid #333", paddingBottom: 5.4, marginBottom: 9 }}>
+          <h2 style={{ fontSize: 16.2, margin: 0 }}>納品書</h2>
+          <span style={{ fontSize: 16.2, color: "#555" }}>{formatMD(invoiceDate)}（{weekdayJa(invoiceDate)}）</span>
         </div>
       ) : (
         <div style={{ borderTop: "1px solid #999", margin: "1.7px 0" }} />
       )}
       {/* 2026-09-21 追加変更（kento指示）: 「宅急便」の発送/着日は別行の見出しにせず、
           店舗名と同じ行にまとめて記載する。 */}
-      <p style={{ fontSize: 18, fontWeight: 700, margin: "0 0 10px" }}>
+      <p style={{ fontSize: 16.2, fontWeight: 700, margin: "9px 0" }}>
         {destination} 様
         {takkyuGroups.length > 0 && (
           <span style={{ marginLeft: 14, fontWeight: 400 }}>
@@ -1401,10 +1401,10 @@ function InvoicePreview({ invoiceDate, destination, lineItems, showTitle = true,
       {takkyu.map(renderLine)}
 
       {showTotals && (
-        <div style={{ marginTop: 14, borderTop: "2px solid #333", paddingTop: 8, fontSize: 11.7 }}>
+        <div style={{ marginTop: 12.6, borderTop: "2px solid #333", paddingTop: 7.2, fontSize: 16.2 }}>
           <div style={{ display: "flex", justifyContent: "space-between" }}><span>商品合計</span><span>{fmtYen(totals.subtotal)}</span></div>
           <div style={{ display: "flex", justifyContent: "space-between" }}><span>消費税(8%)</span><span>{fmtYen(totals.tax)}</span></div>
-          <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: 13.5, marginTop: 4 }}><span>税込合計</span><span>{fmtYen(totals.total)}</span></div>
+          <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: 16.2, marginTop: 3.6 }}><span>税込合計</span><span>{fmtYen(totals.total)}</span></div>
         </div>
       )}
     </div>
@@ -1585,10 +1585,10 @@ function InvoicePanel({ date }) {
                     />
                   ))}
                   <div style={{ padding: "0 10mm 8mm", background: "#fff", fontFamily: "system-ui, sans-serif", color: "#222" }}>
-                    <div style={{ borderTop: "2px solid #333", paddingTop: 8, fontSize: 11.7 }}>
+                    <div style={{ borderTop: "2px solid #333", paddingTop: 7.2, fontSize: 16.2 }}>
                       <div style={{ display: "flex", justifyContent: "space-between" }}><span>商品合計</span><span>{fmtYen(grandTotals.subtotal)}</span></div>
                       <div style={{ display: "flex", justifyContent: "space-between" }}><span>消費税(8%)</span><span>{fmtYen(grandTotals.tax)}</span></div>
-                      <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: 13.5, marginTop: 4 }}><span>税込合計</span><span>{fmtYen(grandTotals.total)}</span></div>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: 16.2, marginTop: 3.6 }}><span>税込合計</span><span>{fmtYen(grandTotals.total)}</span></div>
                     </div>
                   </div>
                 </div>
