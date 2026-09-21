@@ -1,4 +1,4 @@
-import { calcLineAmount, comparePrice, calcTax, buildInvoiceTotals } from '../src/lib/pricing.js';
+import { calcLineAmount, comparePrice, calcTax, buildInvoiceTotals, computeSellPrice, buildProfitTotals } from '../src/lib/pricing.js';
 import assert from 'node:assert';
 
 // ケース4: kg単価 1.5kg × ¥12,000/kg = ¥18,000
@@ -29,4 +29,14 @@ assert.equal(totals.subtotal, 50007);
 assert.equal(totals.tax, 4001);
 assert.equal(totals.total, 54008);
 
-console.log('OK: pricing/tax logic matches spec test cases (4,5,6,7,8)');
+// ケース9: 利益計算。1万円以上は1.1倍、未満は1.15倍。売値入力済みならそちらを優先。
+assert.equal(computeSellPrice({ amount: 10000 }), 11000); // 10000 * 1.1
+assert.equal(computeSellPrice({ amount: 9999 }), 11499); // 9999 * 1.15 = 11498.85 -> 11499
+assert.equal(computeSellPrice({ amount: 10000, sell_price: 12000 }), 12000); // 入力済みを優先
+
+const profit = buildProfitTotals([{ amount: 10000 }, { amount: 5000 }]);
+assert.equal(profit.cost, 15000);
+assert.equal(profit.sell, 16750); // 11000 + 5750
+assert.equal(profit.profit, 1750);
+
+console.log('OK: pricing/tax logic matches spec test cases (4,5,6,7,8,9)');

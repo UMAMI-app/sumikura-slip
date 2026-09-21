@@ -69,3 +69,26 @@ export const DELIVERY_CATEGORY_LABELS = {
   ground: '配送便🚛',
   takkyu: '宅急便📦',
 };
+
+// 利益計算（2026-09-21 追加, kento指示）。
+// 納品書明細の金額(amount)がそのまま仕入れ値。売値を明細ごとに入力・保存できるようにし
+// （invoice_line_items.sell_price）、入力済みならその金額を使う。未入力なら仕入れ値から
+// 自動計算する: 1万円以上は1.1倍、1万円未満は1.15倍（消費税は考慮しない＝税抜のまま計算）。
+export function computeSellPrice(item) {
+  const cost = item.amount || 0;
+  if (item.sell_price != null && item.sell_price !== '') {
+    return Math.round(Number(item.sell_price));
+  }
+  const rate = cost >= 10000 ? 1.1 : 1.15;
+  return Math.round(cost * rate);
+}
+
+export function buildProfitTotals(lineItems) {
+  let cost = 0;
+  let sell = 0;
+  lineItems.forEach((li) => {
+    cost += li.amount || 0;
+    sell += computeSellPrice(li);
+  });
+  return { cost, sell, profit: sell - cost };
+}

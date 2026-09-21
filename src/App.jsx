@@ -9,6 +9,8 @@ import {
   buildInvoiceTotals,
   isSameDayCategory,
   DELIVERY_CATEGORY_LABELS,
+  computeSellPrice,
+  buildProfitTotals,
 } from "./lib/pricing";
 import { rankManuscriptCandidates } from "./lib/matching";
 
@@ -1732,6 +1734,12 @@ function HistoryPanel() {
   const [loadingDetail, setLoadingDetail] = useState(false);
   const previewRef = useRef(null);
 
+  // 2026-09-21 追加変更（kento指示）: 選択した日付の利益を表示する。
+  // 売値は明細ごとに入力・保存でき（未入力ならcomputeSellPriceで自動計算）、
+  // 入力欄は「id -> 編集中の文字列」で保持し、フォーカスを外したタイミングでDB保存する。
+  const [sellPriceDrafts, setSellPriceDrafts] = useState({});
+  const [savingSellPriceId, setSavingSellPriceId] = useState(null);
+
   const search = useCallback(async () => {
     setLoading(true);
     setErr("");
@@ -1784,10 +1792,32 @@ function HistoryPanel() {
       );
       groups.sort((a, b) => a.invoice.destination.localeCompare(b.invoice.destination, "ja"));
       setSelectedGroups(groups);
+      const drafts = {};
+      groups.forEach((g) => g.items.forEach((it) => { drafts[it.id] = it.sell_price != null ? String(it.sell_price) : ""; }));
+      setSellPriceDrafts(drafts);
     } catch (e) {
       setErr("納品書明細の取得に失敗しました: " + (e.message || e));
     } finally {
       setLoadingDetail(false);
+    }
+  };
+
+  // 2026-09-21 追加変更（kento指示）: 売値を明細ごとに編集・保存する。
+  // 空欄に戻せば自動計算（computeSellPrice）に戻る。
+  const updateSellPrice = async (itemId, rawValue) => {
+    const value = rawValue.trim() === "" ? null : Number(rawValue);
+    if (value != null && Number.isNaN(value)) return;
+    setSavingSellPriceId(itemId);
+    setErr("");
+    try {
+      await db.update("invoice_line_items", itemId, { sell_price: value });
+      setSelectedGroups((prev) =>
+        prev.map((g) => ({ ...g, items: g.items.map((it) => (it.id === itemId ? { ...it, sell_price: value } : it)) }))
+      );
+    } catch (e) {
+      setErr("売値の保存に失敗しました: " + (e.message || e));
+    } finally {
+      setSavingSellPriceId(null);
     }
   };
 
@@ -1818,6 +1848,7 @@ function HistoryPanel() {
   };
 
   const grandTotals = buildInvoiceTotals(selectedGroups.flatMap((g) => g.items));
+  const profitTotals = buildProfitTotals(selectedGroups.flatMap((g) => g.items));
 
   // 2026-09-21 追加変更（kento指示）: 履歴側のダウンロードも、納品書作成ページの
   // 「PDFで保存」と同じくその日の全店舗分をまとめて1つのPDFにする。
@@ -1937,6 +1968,59 @@ function HistoryPanel() {
                 </A4PreviewScaler>
                 <div style={{ marginTop: 12, textAlign: "center" }}>
                   <button style={btn(true)} disabled={savingPdf} onClick={savePdf}>{savingPdf ? "PDF作成中..." : "PDFで保存"}</button>
+                </div>
+
+                {/* 2026-09-21 追加（kento指示）: 選択した日付の利益。
+                    仕入れ値＝納品書明細の金額(amount)。売値は明細ごとに入力・保存でき、
+                    未入力なら仕入れ値から自動計算（1万円以上は1.1倍、1万円未満は1.15倍、税抜）。 */}
+                <div style={{ marginTop: 20 }}>
+                  <h3 style={h3()}>利益（{selectedDate}）</h3>
+                  <div style={{ marginBottom: 10, fontSize: 13, color: T.textSub }}>
+                    仕入れ値合計 {fmtYen(profitTotals.cost)}　/　売値合計 {fmtYen(profitTotals.sell)}
+                  </div>
+                  <div style={{ overflowX: "auto" }}>
+                    <table style={table()}>
+                      <thead>
+                        <tr>
+                          <th style={th()}>店舗</th>
+                          <th style={th()}>品目</th>
+                          <th style={{ ...th(), textAlign: "right" }}>仕入れ値</th>
+                          <th style={{ ...th(), textAlign: "right" }}>売値</th>
+                          <th style={{ ...th(), textAlign: "right" }}>利益</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedGroups.map((g) =>
+                          g.items.map((it) => {
+                            const sell = computeSellPrice(it);
+                            const itemProfit = sell - (it.amount || 0);
+                            return (
+                              <tr key={it.id}>
+                                <td style={td()}>{g.invoice.destination}</td>
+                                <td style={td()}>{it.item_name}</td>
+                                <td style={{ ...td(), textAlign: "right" }}>{fmtYen(it.amount)}</td>
+                                <td style={{ ...td(), textAlign: "right" }}>
+                                  <input
+                                    style={{ ...inputStyle(), width: 90, textAlign: "right" }}
+                                    placeholder={String(computeSellPrice({ amount: it.amount }))}
+                                    value={sellPriceDrafts[it.id] ?? ""}
+                                    disabled={savingSellPriceId === it.id}
+                                    onChange={(e) => setSellPriceDrafts((prev) => ({ ...prev, [it.id]: e.target.value }))}
+                                    onBlur={(e) => updateSellPrice(it.id, e.target.value)}
+                                  />
+                                </td>
+                                <td style={{ ...td(), textAlign: "right", fontWeight: 600 }}>{fmtYen(itemProfit)}</td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div style={{ marginTop: 10, borderTop: `2px solid ${T.border}`, paddingTop: 8, fontSize: 15, fontWeight: 700, display: "flex", justifyContent: "space-between" }}>
+                    <span>利益</span>
+                    <span>{fmtYen(profitTotals.profit)}</span>
+                  </div>
                 </div>
               </>
             )}

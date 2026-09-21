@@ -208,3 +208,11 @@ alter table line_actual_items add column if not exists invoice_id uuid;
 
 -- 納品書明細から元のline_actual_itemsへのトレーサビリティ用（order_line_idと同じ役割）。
 alter table invoice_line_items add column if not exists line_actual_item_id uuid references line_actual_items(id) on delete set null;
+
+-- ============================================================================
+-- 追加(2026-09-21): 履歴ページの利益表示機能（kento指示）。
+-- 納品書明細（invoice_line_items）の金額(amount)を仕入れ値とし、実際の売値を
+-- 明細ごとに保存できるようにする。未入力（null）ならアプリ側で仕入れ値から自動計算
+-- （1万円以上は1.1倍、1万円未満は1.15倍、消費税は考慮しない）。
+-- ============================================================================
+alter table invoice_line_items add column if not exists sell_price numeric;
