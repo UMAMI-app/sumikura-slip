@@ -1418,7 +1418,11 @@ function InvoicePreview({ invoiceDate, destination, lineItems, showTitle = true,
 // まとめて（店舗ごとにわかりやすく区切って）1つのA4印刷用プレビューに表示する。
 // 保存自体は従来どおりinvoices/invoice_line_itemsに店舗ごとに1件ずつ作る
 // （HistoryPanelが店舗単位の閲覧を前提にしているため、データモデルは変更しない）。
-function InvoicePanel({ date }) {
+function InvoicePanel({ date: initialDate }) {
+  // 2026-09-21 追加変更（kento指示）: 前日など当日以外の納品書も作れるように、
+  // タイトル横のカレンダーで対象日を選べるようにする（デフォルトは当日）。
+  // 選んだ日付がLINE実績の読み込み・保存・PDFファイル名すべてに反映される。
+  const [date, setDate] = useState(initialDate);
   const [items, setItems] = useState([]);
   const [loadingItems, setLoadingItems] = useState(false);
   const [loadErr, setLoadErr] = useState("");
@@ -1548,7 +1552,10 @@ function InvoicePanel({ date }) {
 
   return (
     <div>
-      <h2 style={h2()}>納品書作成（{date}）</h2>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+        <h2 style={{ ...h2(), marginBottom: 0 }}>納品書作成</h2>
+        <input type="date" style={inputStyle()} value={date} onChange={(e) => setDate(e.target.value)} />
+      </div>
       {loadErr && <div style={{ color: T.warn, marginBottom: 12 }}>{loadErr}</div>}
       {err && <div style={{ color: T.warn, marginBottom: 12 }}>{err}</div>}
       {loadingItems && <p style={{ fontSize: 13, color: T.textSub }}>読み込み中...</p>}
