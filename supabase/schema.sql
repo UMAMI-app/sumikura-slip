@@ -144,31 +144,10 @@ alter table order_lines add column if not exists ship_date date;
 -- 今回は未実装で、まずは「正確に構造化して確認・保存できる」ところまでを対象とする。
 -- ============================================================================
 
--- 原稿（ブロック形式・価格チェックタブへの貼り付け専用）
-create table if not exists manuscript_purchase_items (
-  id uuid primary key default gen_random_uuid(),
-  manuscript_date date not null default current_date,
-  is_shipping_fee boolean not null default false,
-  item_name text default '',
-  origin text default '',
-  spec text default '',
-  quantity numeric,
-  quantity_unit text default '',
-  actual_weight numeric,
-  actual_weight_unit text default '',
-  purchase_price numeric,
-  purchase_price_unit text default '',
-  purchase_amount numeric,
-  selling_price numeric,
-  selling_price_unit text default '',
-  selling_price_source text check (selling_price_source in ('original','calculated','manual')),
-  shipping_fee numeric,
-  shipping_note text default '',
-  note text default '',
-  raw_line text,
-  created_at timestamptz not null default now()
-);
-create index if not exists idx_manuscript_purchase_items_date on manuscript_purchase_items(manuscript_date);
+-- manuscript_purchase_items（原稿・ブロック形式の貼り付け専用テーブル）は、
+-- バッキングUI「①原稿を貼り付け」が重複のため削除されたのに伴い、2026-09-21に
+-- kentoの指示でdrop table済み（drop table if exists manuscript_purchase_items;）。
+-- 新規セットアップ時にこのテーブルを作る必要はない。
 
 -- LINE出荷実績データ（ブロック形式・価格チェックタブへの貼り付け専用）
 create table if not exists line_actual_items (
@@ -203,12 +182,29 @@ create table if not exists product_price_units (
   updated_at timestamptz not null default now()
 );
 
-alter table manuscript_purchase_items disable row level security;
 alter table line_actual_items disable row level security;
 alter table product_price_units disable row level security;
 
 grant select, insert, update, delete on
-  manuscript_purchase_items,
   line_actual_items,
   product_price_units
 to anon, authenticated;
+
+-- ============================================================================
+-- 追加(2026-09-21): STEP5対応。LINE実績データ(line_actual_items)を原稿(manuscript_items)に
+-- 紐付けて単価チェックする機能、および納品書作成をorder_lines依存からline_actual_items
+-- ベースに作り替えた対応（kento指示）。
+-- 「② 発注一覧との価格チェック」（order_lines側の紐付け機能）は廃止したため、
+-- order_lines.manuscript_item_id / manuscript_price_status は今後新規には使われないが、
+-- 過去データ保持のため列自体は残す。
+-- ============================================================================
+
+-- line_actual_items 側にも、order_linesと同じ形の原稿紐付け列を追加する。
+alter table line_actual_items add column if not exists manuscript_item_id uuid references manuscript_items(id) on delete set null;
+alter table line_actual_items add column if not exists manuscript_price_status text not null default 'none' check (manuscript_price_status in ('linked','none'));
+
+-- 納品書化済みかどうかの目印（order_lines.invoice_idと同じ役割）。
+alter table line_actual_items add column if not exists invoice_id uuid;
+
+-- 納品書明細から元のline_actual_itemsへのトレーサビリティ用（order_line_idと同じ役割）。
+alter table invoice_line_items add column if not exists line_actual_item_id uuid references line_actual_items(id) on delete set null;

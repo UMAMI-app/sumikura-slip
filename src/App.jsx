@@ -10,6 +10,7 @@ import {
   isSameDayCategory,
   DELIVERY_CATEGORY_LABELS,
 } from "./lib/pricing";
+import { rankManuscriptCandidates } from "./lib/matching";
 
 // ---- テーマ（UMAMI stockと近い配色に合わせた最小限のインラインスタイル） ----
 const T = {
@@ -179,19 +180,12 @@ export default function App() {
         {tab === "pricecheck" && (
           <PriceCheckPanel
             date={selectedDate}
-            orderLines={orderLines}
             manuscriptItems={manuscriptItems}
             manuscriptItemById={manuscriptItemById}
-            onChanged={() => loadOrderLines(selectedDate).catch((e) => setGlobalError(e.message || String(e)))}
           />
         )}
         {tab === "invoice" && (
-          <InvoicePanel
-            date={selectedDate}
-            orderLines={orderLines}
-            manuscriptItemById={manuscriptItemById}
-            onSaved={() => reloadAll(selectedDate)}
-          />
+          <InvoicePanel date={selectedDate} manuscriptItemById={manuscriptItemById} />
         )}
         {tab === "history" && <HistoryPanel />}
       </main>
@@ -882,120 +876,15 @@ function OrdersPanel({ date, orderLines, onChanged }) {
 }
 
 /* ============================= 価格チェック ============================= */
-// 原稿価格の紐付け・実単価の入力・差額確認はここで行う（発送作業時に見る発注一覧とは分離）。
-// 詳細仕様は追って調整予定。今は発注一覧から移設した最小限の機能のみ。
-function PriceCheckPanel({ date, orderLines, manuscriptItems, manuscriptItemById, onChanged }) {
-  const [localLines, setLocalLines] = useState(orderLines);
-  const [err, setErr] = useState("");
-
-  useEffect(() => setLocalLines(orderLines), [orderLines]);
-
-  const patchLocal = (id, patch) => {
-    setLocalLines((prev) => prev.map((l) => (l.id === id ? { ...l, ...patch } : l)));
-  };
-  const saveField = async (id, patch) => {
-    // patchLocalで既に画面には反映済みなので、ここではDBへの保存のみ行う。
-    // 毎回onChanged()で全件再取得すると、created_atが同じ行が並び替わってしまい
-    // 「入力するたびに店舗の順番が変わる」原因になっていたため、再取得はしない。
-    try {
-      await db.update("order_lines", id, patch);
-    } catch (e) {
-      setErr("保存に失敗しました: " + (e.message || e));
-    }
-  };
-
-  const setManuscriptLink = (line, manuscriptItemId) => {
-    patchLocal(line.id, { manuscript_item_id: manuscriptItemId || null, manuscript_price_status: manuscriptItemId ? "linked" : "none" });
-    saveField(line.id, { manuscript_item_id: manuscriptItemId || null, manuscript_price_status: manuscriptItemId ? "linked" : "none" });
-  };
-
-  const manuscriptOptions = manuscriptItems
-    .slice()
-    .sort((a, b) => a.item_name.localeCompare(b.item_name, "ja"))
-    .map((it) => ({
-      value: it.id,
-      label: `${it.item_name}（${it.origin || "産地未記載"}）${it.spec ? " " + it.spec : ""} ${fmtYen(it.unit_price)}/${it.price_unit || "?"}`,
-    }));
-
-  const renderRow = (line) => {
-    const mi = line.manuscript_item_id ? manuscriptItemById.get(line.manuscript_item_id) : null;
-    const cmp = comparePrice({
-      manuscriptPrice: mi ? mi.unit_price : null,
-      manuscriptUnit: mi ? mi.price_unit : null,
-      actualPrice: line.actual_unit_price != null ? Number(line.actual_unit_price) : null,
-      actualUnit: line.actual_unit_price_unit || null,
-    });
-    const amountInfo = calcLineAmount({
-      priceUnit: mi ? mi.price_unit : line.actual_unit_price_unit,
-      unitPrice: line.actual_unit_price != null ? Number(line.actual_unit_price) : null,
-      actualWeight: line.actual_weight != null ? Number(line.actual_weight) : null,
-      actualQuantity: line.actual_quantity != null ? Number(line.actual_quantity) : (line.quantity != null ? Number(line.quantity) : null),
-    });
-
-    return (
-      <tr key={line.id} style={{ background: cmp.status === "up" ? T.warnBg : "transparent" }}>
-        <td style={td()}>
-          {line.item_name}
-          {line.origin && <div style={{ fontSize: 11, color: T.textSub }}>{line.origin}</div>}
-        </td>
-        <td style={td()}>{combinedQtyText(line)}</td>
-        <td style={td()}>
-          <select style={{ ...inputStyle(), maxWidth: 170 }} value={line.manuscript_item_id || ""} onChange={(e) => setManuscriptLink(line, e.target.value)}>
-            <option value="">―原稿価格なし―</option>
-            {manuscriptOptions.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </select>
-        </td>
-        <td style={td()}>
-          <div style={{ display: "flex", gap: 4 }}>
-            <input style={{ ...inputStyle(), width: 70 }} placeholder="実単価" value={line.actual_unit_price ?? ""} onChange={(e) => patchLocal(line.id, { actual_unit_price: e.target.value })} onBlur={(e) => saveField(line.id, { actual_unit_price: e.target.value ? parseFloat(e.target.value) : null })} />
-            <input style={{ ...inputStyle(), width: 44 }} placeholder="単位" value={line.actual_unit_price_unit ?? ""} onChange={(e) => patchLocal(line.id, { actual_unit_price_unit: e.target.value })} onBlur={(e) => saveField(line.id, { actual_unit_price_unit: e.target.value })} />
-          </div>
-        </td>
-        <td style={td()}>
-          {cmp.status === "up" && <span style={{ color: T.warn, fontWeight: 700 }}>⚠️ +{fmtYen(cmp.diff)}</span>}
-          {cmp.status === "down" && <span style={{ color: T.textSub }}>{fmtYen(cmp.diff)}</span>}
-          {cmp.status === "same" && <span style={{ color: T.ok }}>±0</span>}
-          {cmp.status === "no_manuscript_price" && <span style={{ color: T.textSub }}>―</span>}
-          {cmp.status === "unit_unknown" && <span style={{ color: T.textSub, fontSize: 11 }}>単位未確認</span>}
-          {cmp.status === "unit_mismatch" && (
-            <span style={{ color: T.warn, fontSize: 11 }}>
-              ⚠️単位不一致（原稿:{cmp.manuscriptUnit} / 実績:{cmp.actualUnit}）
-            </span>
-          )}
-        </td>
-        <td style={td()}>{amountInfo.amount != null ? fmtYen(amountInfo.amount) : ""}</td>
-      </tr>
-    );
-  };
-
+// 「② 発注一覧との価格チェック」（order_lines側の紐付け）はSTEP5でLineActualPaste
+// (①LINE実績データ)側への原稿紐付け・単価チェックに一本化したため廃止した
+// （kento指示: 2026-09-21）。中身は LineActualPaste 内のManuscriptLinkSelect/
+// ManuscriptCompareBadgeを参照。
+function PriceCheckPanel({ date, manuscriptItems, manuscriptItemById }) {
   return (
     <div>
       <h2 style={h2()}>価格チェック（{date}）</h2>
-      {err && <div style={{ color: T.warn, marginBottom: 12 }}>{err}</div>}
-
-      <LineActualPaste date={date} />
-
-      <section style={card()}>
-        <h3 style={h3()}>② 発注一覧との価格チェック（原稿読み込みタブで紐付け）</h3>
-        {localLines.length === 0 ? (
-          <p style={{ color: T.textSub, fontSize: 13 }}>発注はありません。</p>
-        ) : (
-          <div style={{ overflowX: "auto" }}>
-            <table style={table()}>
-              <thead>
-                <tr>
-                  {["品目", "数量", "原稿単価", "実単価", "差額", "金額"].map((h) => (
-                    <th style={th()} key={h}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>{localLines.map(renderRow)}</tbody>
-            </table>
-          </div>
-        )}
-      </section>
+      <LineActualPaste date={date} manuscriptItems={manuscriptItems} manuscriptItemById={manuscriptItemById} />
     </div>
   );
 }
@@ -1050,7 +939,7 @@ function groupLineItemsByDestination(items) {
   });
 }
 
-function LineActualPaste({ date }) {
+function LineActualPaste({ date, manuscriptItems, manuscriptItemById }) {
   const [text, setText] = useState("");
   const [preview, setPreview] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -1159,6 +1048,30 @@ function LineActualPaste({ date }) {
       loadSaved();
     }
   };
+
+  // 原稿(manuscript_items)との紐付け（候補提示のみ・最終選択はユーザー。STEP5仕様）。
+  // 画面には即反映しつつ、DB保存は個別PATCHのみ行い全件再取得はしない
+  // （②の実装時と同じ理由: 再取得すると created_at が同じ行の並び順が変わってしまうため）。
+  const setManuscriptLink = (row, manuscriptItemId) => {
+    const patch = { manuscript_item_id: manuscriptItemId || null, manuscript_price_status: manuscriptItemId ? "linked" : "none" };
+    setSaved((prev) => prev.map((r) => (r.id === row.id ? { ...r, ...patch } : r)));
+    db.update("line_actual_items", row.id, patch).catch((e) => {
+      setErr("原稿との紐付けの保存に失敗しました: " + (e.message || e));
+      loadSaved();
+    });
+  };
+
+  const manuscriptOptions = useMemo(
+    () =>
+      manuscriptItems
+        .slice()
+        .sort((a, b) => a.item_name.localeCompare(b.item_name, "ja"))
+        .map((it) => ({
+          value: it.id,
+          label: `${it.item_name}（${it.origin || "産地未記載"}）${it.spec ? " " + it.spec : ""} ${fmtYen(it.unit_price)}/${it.price_unit || "?"}`,
+        })),
+    [manuscriptItems]
+  );
 
   const renderPreviewItem = (it) => {
     if (isShippingRowName(it.item_name)) {
@@ -1295,14 +1208,22 @@ function LineActualPaste({ date }) {
               </span>
             </div>
             {g.items.map((r) => (
-              <div key={r.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, padding: "4px 0", borderBottom: `1px solid ${T.softBorder}` }}>
-                <span>
-                  {r.item_name}{r.spec ? `(${r.spec})` : ""}{" "}
-                  {isShippingRowName(r.item_name)
-                    ? (r.purchase_price != null ? fmtYen(r.purchase_price) : "金額なし")
-                    : (r.purchase_price != null ? `${fmtYen(r.purchase_price)}/${r.purchase_price_unit || "?"}` : "仕入価格なし")}
-                </span>
-                <button style={{ ...btn(false), padding: "2px 8px", fontSize: 11 }} onClick={() => handleDeleteSaved(r.id)}>削除</button>
+              <div key={r.id} style={{ padding: "6px 0", borderBottom: `1px solid ${T.softBorder}` }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12 }}>
+                  <span>
+                    {r.item_name}{r.spec ? `(${r.spec})` : ""}{" "}
+                    {isShippingRowName(r.item_name)
+                      ? (r.purchase_price != null ? fmtYen(r.purchase_price) : "金額なし")
+                      : (r.purchase_price != null ? `${fmtYen(r.purchase_price)}/${r.purchase_price_unit || "?"}` : "仕入価格なし")}
+                  </span>
+                  <button style={{ ...btn(false), padding: "2px 8px", fontSize: 11 }} onClick={() => handleDeleteSaved(r.id)}>削除</button>
+                </div>
+                {!isShippingRowName(r.item_name) && (
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 4, flexWrap: "wrap" }}>
+                    <ManuscriptLinkSelect row={r} manuscriptOptions={manuscriptOptions} manuscriptItems={manuscriptItems} onLink={setManuscriptLink} />
+                    <ManuscriptCompareBadge row={r} manuscriptItemById={manuscriptItemById} />
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -1312,17 +1233,82 @@ function LineActualPaste({ date }) {
   );
 }
 
+// LINE実績データの1品目に対する原稿(manuscript_items)紐付け欄（STEP5仕様、案A）。
+// rankManuscriptCandidates（matching.js）による上位候補（最大5件）を先頭に、
+// それ以外の全商品を「その他」としてまとめる。候補が0件の場合は「その他」欄のみになる
+// （＝ユーザーが全件から手動選択する形。AIによる自動確定はしない）。
+function ManuscriptLinkSelect({ row, manuscriptItems, manuscriptOptions, onLink }) {
+  const candidates = useMemo(
+    () =>
+      rankManuscriptCandidates({ item_name: row.item_name, spec: row.spec, origin: row.origin }, manuscriptItems).slice(0, 5),
+    [row.item_name, row.spec, row.origin, manuscriptItems]
+  );
+  const candidateIds = useMemo(() => new Set(candidates.map((c) => c.item.id)), [candidates]);
+  const restOptions = useMemo(() => manuscriptOptions.filter((o) => !candidateIds.has(o.value)), [manuscriptOptions, candidateIds]);
+
+  return (
+    <select
+      style={{ ...inputStyle(), maxWidth: 230, fontSize: 12 }}
+      value={row.manuscript_item_id || ""}
+      onChange={(e) => onLink(row, e.target.value)}
+    >
+      <option value="">―原稿価格なし―</option>
+      {candidates.length > 0 && (
+        <optgroup label="候補">
+          {candidates.map((c) => (
+            <option key={c.item.id} value={c.item.id}>
+              {c.item.item_name}（{c.item.origin || "産地未記載"}）{c.item.spec ? " " + c.item.spec : ""} {fmtYen(c.item.unit_price)}/{c.item.price_unit || "?"}
+            </option>
+          ))}
+        </optgroup>
+      )}
+      <optgroup label={candidates.length > 0 ? "その他（全商品）" : "候補なし（全商品から選択）"}>
+        {restOptions.map((o) => (
+          <option key={o.value} value={o.value}>{o.label}</option>
+        ))}
+      </optgroup>
+    </select>
+  );
+}
+
+// 原稿単価と実績仕入単価の比較バッジ（②のcomparePriceロジックをそのまま流用）。
+// 紐付け無し（no_manuscript_price）の場合は紐付け欄自体が未選択状態なので何も表示しない。
+function ManuscriptCompareBadge({ row, manuscriptItemById }) {
+  const mi = row.manuscript_item_id ? manuscriptItemById.get(row.manuscript_item_id) : null;
+  const cmp = comparePrice({
+    manuscriptPrice: mi ? mi.unit_price : null,
+    manuscriptUnit: mi ? mi.price_unit : null,
+    actualPrice: row.purchase_price != null ? Number(row.purchase_price) : null,
+    actualUnit: row.purchase_price_unit || null,
+  });
+  if (cmp.status === "up") return <span style={{ color: T.warn, fontWeight: 700, fontSize: 11 }}>⚠️ +{fmtYen(cmp.diff)}</span>;
+  if (cmp.status === "down") return <span style={{ color: T.textSub, fontSize: 11 }}>{fmtYen(cmp.diff)}</span>;
+  if (cmp.status === "same") return <span style={{ color: T.ok, fontSize: 11 }}>±0</span>;
+  if (cmp.status === "unit_unknown") return <span style={{ color: T.textSub, fontSize: 11 }}>単位未確認</span>;
+  if (cmp.status === "unit_mismatch") {
+    return (
+      <span style={{ color: T.warn, fontSize: 11 }}>
+        ⚠️単位不一致（原稿:{cmp.manuscriptUnit} / 実績:{cmp.actualUnit}）
+      </span>
+    );
+  }
+  return null;
+}
+
 /* ============================= 納品書プレビュー（共通） ============================= */
-function buildLineItemsForInvoice(lines, manuscriptItemById) {
+// 納品書の明細は常にLINE実績データ(line_actual_items)側の仕入価格(purchase_price/
+// purchase_price_unit)を使う。原稿単価は比較専用であり、納品書の金額計算には使わない
+// （kento指示: 2026-09-21）。takkyu_ship_date/takkyu_arrival_date は、line_actual_items
+// では ship_date/delivery_date という列名なのでここで詰め替える。
+function buildLineItemsForInvoice(lines) {
   return lines.map((line) => {
-    const mi = line.manuscript_item_id ? manuscriptItemById.get(line.manuscript_item_id) : null;
-    const priceUnit = mi ? mi.price_unit : line.actual_unit_price_unit || "";
-    const unitPrice = line.actual_unit_price != null ? Number(line.actual_unit_price) : null;
+    const priceUnit = line.purchase_price_unit || "";
+    const unitPrice = line.purchase_price != null ? Number(line.purchase_price) : null;
     const actualWeight = line.actual_weight != null ? Number(line.actual_weight) : null;
-    const actualQuantity = line.actual_quantity != null ? Number(line.actual_quantity) : (line.quantity != null ? Number(line.quantity) : null);
+    const actualQuantity = line.quantity != null ? Number(line.quantity) : null;
     const { amount } = calcLineAmount({ priceUnit, unitPrice, actualWeight, actualQuantity });
     return {
-      order_line_id: line.id,
+      line_actual_item_id: line.id,
       item_name: line.item_name,
       origin: line.origin,
       quantity: actualQuantity,
@@ -1332,8 +1318,8 @@ function buildLineItemsForInvoice(lines, manuscriptItemById) {
       price_unit: priceUnit,
       amount: amount || 0,
       delivery_category: line.delivery_category,
-      takkyu_ship_date: line.takkyu_ship_date,
-      takkyu_arrival_date: line.takkyu_arrival_date,
+      takkyu_ship_date: line.ship_date,
+      takkyu_arrival_date: line.delivery_date,
     };
   });
 }
@@ -1367,12 +1353,15 @@ function InvoicePreview({ invoiceDate, destination, lineItems }) {
   );
 
   return (
-    <div style={{ width: 380, maxWidth: "100%", margin: "0 auto", background: "#fff", padding: 20, border: "1px solid #ccc", fontFamily: "system-ui, sans-serif", color: "#222" }}>
-      <h2 style={{ fontSize: 16, textAlign: "center", margin: "0 0 4px" }}>納品書</h2>
-      <p style={{ textAlign: "center", fontSize: 13, margin: "0 0 12px", color: "#555" }}>
-        {formatMD(invoiceDate)}（{weekdayJa(invoiceDate)}）
-      </p>
-      <p style={{ fontSize: 14, fontWeight: 700, margin: "0 0 12px" }}>{destination} 様</p>
+    <div
+      className="invoice-store-block"
+      style={{ width: "100%", boxSizing: "border-box", background: "#fff", padding: "8mm 10mm", fontFamily: "system-ui, sans-serif", color: "#222" }}
+    >
+      <div style={{ display: "flex", alignItems: "baseline", gap: 18, borderBottom: "2px solid #333", paddingBottom: 6, marginBottom: 10 }}>
+        <h2 style={{ fontSize: 20, margin: 0 }}>納品書</h2>
+        <span style={{ fontSize: 13, color: "#555" }}>{formatMD(invoiceDate)}（{weekdayJa(invoiceDate)}）</span>
+      </div>
+      <p style={{ fontSize: 15, fontWeight: 700, margin: "0 0 10px" }}>{destination} 様</p>
 
       {sameDay.map(renderLine)}
 
@@ -1395,146 +1384,274 @@ function InvoicePreview({ invoiceDate, destination, lineItems }) {
 }
 
 /* ============================= 納品書作成 ============================= */
-function InvoicePanel({ date, orderLines, manuscriptItemById, onSaved }) {
+// 納品書作成（STEP5でorder_lines依存を廃止し、①で紐付け・確定したline_actual_items
+// から作成する形に作り替えたもの。kento指示: 2026-09-21）。
+// 2026-09-21 追加変更（kento指示）: 一店舗ずつではなく、その日の全店舗を
+// まとめて（店舗ごとにわかりやすく区切って）1つのA4印刷用プレビューに表示する。
+// 保存自体は従来どおりinvoices/invoice_line_itemsに店舗ごとに1件ずつ作る
+// （HistoryPanelが店舗単位の閲覧を前提にしているため、データモデルは変更しない）。
+function InvoicePanel({ date, manuscriptItemById }) {
+  const [items, setItems] = useState([]);
+  const [loadingItems, setLoadingItems] = useState(false);
+  const [loadErr, setLoadErr] = useState("");
+
+  const loadItems = useCallback(async () => {
+    setLoadingItems(true);
+    setLoadErr("");
+    try {
+      const rows = await db.list("line_actual_items", `?order_date=eq.${date}&order=created_at.asc`);
+      setItems(rows);
+    } catch (e) {
+      setLoadErr("読み込みに失敗しました: " + (e.message || e));
+    } finally {
+      setLoadingItems(false);
+    }
+  }, [date]);
+
+  useEffect(() => { loadItems(); }, [loadItems]);
+
   const destinations = useMemo(
-    () => [...new Set(orderLines.map((l) => l.destination).filter(Boolean))],
-    [orderLines]
+    () => [...new Set(items.map((l) => l.destination).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ja")),
+    [items]
   );
-  const [destination, setDestination] = useState("");
-  const [included, setIncluded] = useState({}); // id -> bool
-  const [saving, setSaving] = useState(false);
+
+  const [included, setIncluded] = useState({}); // line_actual_items.id -> bool（全店舗ぶんまとめて持つ）
   const [err, setErr] = useState("");
-  const [savedInvoiceId, setSavedInvoiceId] = useState(null);
-  const previewRef = useRef(null);
+  const [savingDestination, setSavingDestination] = useState(null);
+  const [savedInvoiceIds, setSavedInvoiceIds] = useState({}); // destination -> invoice.id（このセッション中に保存したもの）
+  const storeRefs = useRef(new Map()); // destination -> DOM node（PNG出力用）
 
   useEffect(() => {
-    if (!destination && destinations.length > 0) setDestination(destinations[0]);
-  }, [destinations, destination]);
+    // 新しく見えた行だけデフォルト値（未納品書化のものを含める）を設定し、
+    // 既にユーザーがチェックを変更した行の状態は上書きしない。
+    setIncluded((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      items.forEach((l) => {
+        if (!(l.id in next)) {
+          next[l.id] = !l.invoice_id;
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [items]);
 
-  const destLines = useMemo(() => orderLines.filter((l) => l.destination === destination), [orderLines, destination]);
-
-  useEffect(() => {
-    const next = {};
-    destLines.forEach((l) => { next[l.id] = l.shipped_checked; });
-    setIncluded(next);
-    setSavedInvoiceId(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [destination, date]);
-
-  const includedLines = destLines.filter((l) => included[l.id]);
-  const lineItems = useMemo(() => buildLineItemsForInvoice(includedLines, manuscriptItemById), [includedLines, manuscriptItemById]);
-  const totals = buildInvoiceTotals(lineItems);
-  const warnCount = includedLines.filter((l) => {
+  // 警告表示の条件: 原稿と紐付いていて(linked)、かつ単位が一致している場合に限る。
+  // 単位不明・不一致はcomparePriceがunit_unknown/unit_mismatchを返すのでカウントしない
+  // （kento指示どおり、その場合は比較せずその旨だけ表示する）。
+  const compareFor = (l) => {
     const mi = l.manuscript_item_id ? manuscriptItemById.get(l.manuscript_item_id) : null;
     return comparePrice({
       manuscriptPrice: mi ? mi.unit_price : null,
       manuscriptUnit: mi ? mi.price_unit : null,
-      actualPrice: l.actual_unit_price != null ? Number(l.actual_unit_price) : null,
-      actualUnit: l.actual_unit_price_unit || null,
-    }).status === "up";
-  }).length;
+      actualPrice: l.purchase_price != null ? Number(l.purchase_price) : null,
+      actualUnit: l.purchase_price_unit || null,
+    });
+  };
 
-  const saveInvoice = async () => {
-    if (includedLines.length === 0 || !destination) return;
-    setSaving(true);
+  const byDestination = useMemo(
+    () =>
+      destinations.map((dest) => {
+        const destLines = items.filter((l) => l.destination === dest);
+        const includedLines = destLines.filter((l) => included[l.id]);
+        const lineItems = buildLineItemsForInvoice(includedLines);
+        const totals = buildInvoiceTotals(lineItems);
+        const warnCount = includedLines.filter((l) => compareFor(l).status === "up").length;
+        return { destination: dest, destLines, includedLines, lineItems, totals, warnCount };
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [destinations, items, included, manuscriptItemById]
+  );
+
+  // 1店舗ぶんのinvoices/invoice_line_items作成＋line_actual_itemsへのinvoice_idマーキング。
+  // saveOne（個別保存）とsaveAll（一括保存）の両方から呼ぶ共通処理。
+  const saveGroup = async (group) => {
+    const [invoice] = await db.insert("invoices", {
+      invoice_date: date,
+      destination: group.destination,
+      subtotal: group.totals.subtotal,
+      tax: group.totals.tax,
+      total: group.totals.total,
+    });
+    const rows = group.lineItems.map((li, idx) => ({ ...li, invoice_id: invoice.id, sort_order: idx }));
+    await db.insertMany("invoice_line_items", rows);
+    await Promise.all(group.includedLines.map((l) => db.update("line_actual_items", l.id, { invoice_id: invoice.id })));
+    return invoice;
+  };
+
+  const saveOne = async (dest) => {
+    const group = byDestination.find((g) => g.destination === dest);
+    if (!group || group.includedLines.length === 0) return;
+    setSavingDestination(dest);
     setErr("");
     try {
-      const [invoice] = await db.insert("invoices", {
-        invoice_date: date,
-        destination,
-        subtotal: totals.subtotal,
-        tax: totals.tax,
-        total: totals.total,
-      });
-      const rows = lineItems.map((li, idx) => ({ ...li, invoice_id: invoice.id, sort_order: idx }));
-      await db.insertMany("invoice_line_items", rows);
-      await Promise.all(includedLines.map((l) => db.update("order_lines", l.id, { invoice_id: invoice.id })));
-      setSavedInvoiceId(invoice.id);
-      onSaved();
+      const invoice = await saveGroup(group);
+      setSavedInvoiceIds((prev) => ({ ...prev, [dest]: invoice.id }));
+      await loadItems();
     } catch (e) {
-      setErr("納品書の保存に失敗しました: " + (e.message || e));
+      setErr(`${dest}の納品書保存に失敗しました: ` + (e.message || e));
     } finally {
-      setSaving(false);
+      setSavingDestination(null);
     }
   };
 
-  const downloadImage = async () => {
-    if (!previewRef.current) return;
+  // 未保存の店舗（含める商品が1件以上あり、まだ保存していないもの）をまとめて
+  // 1つずつ順番に保存する（kento指示: 2026-09-21「一括保存ほしい」）。
+  // 並行実行にすると同じタイミングのinvoice作成やline_actual_itemsの更新が
+  // 競合しうるため、あえて直列（for...of + await）で処理する。
+  const [savingAll, setSavingAll] = useState(false);
+  const unsavedGroups = byDestination.filter((g) => g.includedLines.length > 0 && !savedInvoiceIds[g.destination]);
+
+  const saveAll = async () => {
+    if (unsavedGroups.length === 0) return;
+    setSavingAll(true);
+    setErr("");
+    const newlySaved = {};
+    const failedDestinations = [];
+    for (const group of unsavedGroups) {
+      try {
+        const invoice = await saveGroup(group);
+        newlySaved[group.destination] = invoice.id;
+      } catch (e) {
+        failedDestinations.push(group.destination);
+      }
+    }
+    if (Object.keys(newlySaved).length > 0) {
+      setSavedInvoiceIds((prev) => ({ ...prev, ...newlySaved }));
+    }
+    if (failedDestinations.length > 0) {
+      setErr(`一括保存に失敗した店舗があります: ${failedDestinations.join("、")}`);
+    }
+    await loadItems();
+    setSavingAll(false);
+  };
+
+  const handlePrintAll = () => {
+    window.print();
+  };
+
+  const downloadImageFor = async (dest) => {
+    const node = storeRefs.current.get(dest);
+    if (!node) return;
     try {
       const html2canvas = (await import("html2canvas")).default;
-      const canvas = await html2canvas(previewRef.current, { backgroundColor: "#fff", scale: 2 });
+      const canvas = await html2canvas(node, { backgroundColor: "#fff", scale: 2 });
       const link = document.createElement("a");
-      link.download = `納品書_${date}_${destination}.png`;
+      link.download = `納品書_${date}_${dest}.png`;
       link.href = canvas.toDataURL("image/png");
       link.click();
     } catch (e) {
-      setErr("画像出力に失敗しました: " + (e.message || e));
+      setErr(`${dest}の画像出力に失敗しました: ` + (e.message || e));
     }
   };
+
+  const printableGroups = byDestination.filter((g) => g.includedLines.length > 0);
 
   return (
     <div>
       <h2 style={h2()}>納品書作成（{date}）</h2>
+      {loadErr && <div style={{ color: T.warn, marginBottom: 12 }}>{loadErr}</div>}
       {err && <div style={{ color: T.warn, marginBottom: 12 }}>{err}</div>}
+      {loadingItems && <p style={{ fontSize: 13, color: T.textSub }}>読み込み中...</p>}
 
-      <section style={card()}>
-        <label style={{ fontSize: 13, marginRight: 8 }}>納品先:</label>
-        <select style={inputStyle()} value={destination} onChange={(e) => setDestination(e.target.value)}>
-          {destinations.length === 0 && <option value="">（この日の発注に納品先がありません）</option>}
-          {destinations.map((d) => (
-            <option key={d} value={d}>{d}</option>
-          ))}
-        </select>
-
-        {warnCount > 0 && (
-          <div style={{ marginTop: 10, color: T.warn, fontSize: 13 }}>⚠️ 原稿より高くなった商品が{warnCount}件含まれています。</div>
-        )}
-
-        <h3 style={{ ...h3(), marginTop: 14 }}>含める発注行</h3>
-        <div style={{ overflowX: "auto" }}>
-          <table style={table()}>
-            <thead>
-              <tr>
-                <th style={th()}>含める</th>
-                <th style={th()}>品目</th>
-                <th style={th()}>産地</th>
-                <th style={th()}>数量/目方</th>
-                <th style={th()}>単価</th>
-                <th style={th()}>金額</th>
-              </tr>
-            </thead>
-            <tbody>
-              {destLines.map((l) => {
-                const li = buildLineItemsForInvoice([l], manuscriptItemById)[0];
-                return (
-                  <tr key={l.id}>
-                    <td style={td()}><input type="checkbox" checked={!!included[l.id]} onChange={(e) => setIncluded((prev) => ({ ...prev, [l.id]: e.target.checked }))} /></td>
-                    <td style={td()}>{l.item_name}</td>
-                    <td style={td()}>{l.origin}</td>
-                    <td style={td()}>{li.quantity ?? ""}{li.quantity_unit} {li.weight ? `/ ${li.weight}kg` : ""}</td>
-                    <td style={td()}>{li.unit_price ? `¥${li.unit_price.toLocaleString("ja-JP")}/${li.price_unit}` : "未入力"}</td>
-                    <td style={td()}>{fmtYen(li.amount)}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      {destination && includedLines.length > 0 && (
-        <section style={card()}>
-          <h3 style={h3()}>プレビュー</h3>
-          <div ref={previewRef}>
-            <InvoicePreview invoiceDate={date} destination={destination} lineItems={lineItems} />
-          </div>
-          <div style={{ marginTop: 12, display: "flex", gap: 8, justifyContent: "center" }}>
-            <button style={btn(true)} disabled={saving || !!savedInvoiceId} onClick={saveInvoice}>
-              {savedInvoiceId ? "保存済み" : saving ? "保存中..." : "納品書を確定して保存"}
+      {destinations.length === 0 ? (
+        <p style={{ color: T.textSub, fontSize: 13 }}>この日のLINE実績データに納品先がありません。</p>
+      ) : (
+        <>
+          <section style={{ ...card(), display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+            <span style={{ fontSize: 13, color: T.textSub }}>
+              {unsavedGroups.length > 0 ? `未保存: ${unsavedGroups.length}店舗` : "すべての店舗を保存済みです"}
+            </span>
+            <button style={btn(true)} disabled={savingAll || unsavedGroups.length === 0} onClick={saveAll}>
+              {savingAll ? "一括保存中..." : `全店舗をまとめて保存（${unsavedGroups.length}件）`}
             </button>
-            <button style={btn()} onClick={downloadImage}>PNG画像として保存</button>
-          </div>
-        </section>
+          </section>
+
+          {byDestination.map((g) => (
+            <section key={g.destination} style={card()}>
+              <h3 style={h3()}>
+                {g.destination}
+                {savedInvoiceIds[g.destination] && <span style={{ fontSize: 11, color: T.textSub, fontWeight: 400, marginLeft: 8 }}>（保存済み）</span>}
+              </h3>
+              {g.warnCount > 0 && (
+                <div style={{ marginBottom: 8, color: T.warn, fontSize: 13 }}>⚠️ 原稿より高くなった商品が{g.warnCount}件含まれています。</div>
+              )}
+              <div style={{ overflowX: "auto" }}>
+                <table style={table()}>
+                  <thead>
+                    <tr>
+                      <th style={th()}>含める</th>
+                      <th style={th()}>品目</th>
+                      <th style={th()}>産地</th>
+                      <th style={th()}>数量/目方</th>
+                      <th style={th()}>仕入単価</th>
+                      <th style={th()}>原稿比較</th>
+                      <th style={th()}>金額</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {g.destLines.map((l) => {
+                      const li = buildLineItemsForInvoice([l])[0];
+                      const cmp = compareFor(l);
+                      return (
+                        <tr key={l.id} style={{ background: cmp.status === "up" ? T.warnBg : "transparent" }}>
+                          <td style={td()}><input type="checkbox" checked={!!included[l.id]} onChange={(e) => setIncluded((prev) => ({ ...prev, [l.id]: e.target.checked }))} /></td>
+                          <td style={td()}>
+                            {l.item_name}
+                            {l.invoice_id && <div style={{ fontSize: 10, color: T.textSub }}>（納品書化済み）</div>}
+                          </td>
+                          <td style={td()}>{l.origin}</td>
+                          <td style={td()}>{li.quantity ?? ""}{li.quantity_unit} {li.weight ? `/ ${li.weight}kg` : ""}</td>
+                          <td style={td()}>{li.unit_price ? `¥${li.unit_price.toLocaleString("ja-JP")}/${li.price_unit}` : "未入力"}</td>
+                          <td style={td()}>
+                            {cmp.status === "up" && <span style={{ color: T.warn, fontWeight: 700, fontSize: 12 }}>⚠️ +{fmtYen(cmp.diff)}</span>}
+                            {cmp.status === "down" && <span style={{ color: T.textSub, fontSize: 12 }}>{fmtYen(cmp.diff)}</span>}
+                            {cmp.status === "same" && <span style={{ color: T.ok, fontSize: 12 }}>±0</span>}
+                            {cmp.status === "no_manuscript_price" && <span style={{ color: T.textSub, fontSize: 12 }}>未紐付け</span>}
+                            {cmp.status === "unit_unknown" && <span style={{ color: T.textSub, fontSize: 11 }}>単位未確認</span>}
+                            {cmp.status === "unit_mismatch" && <span style={{ color: T.warn, fontSize: 11 }}>⚠️単位不一致</span>}
+                          </td>
+                          <td style={td()}>{fmtYen(li.amount)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button
+                  style={btn(true)}
+                  disabled={savingDestination === g.destination || savingAll || !!savedInvoiceIds[g.destination] || g.includedLines.length === 0}
+                  onClick={() => saveOne(g.destination)}
+                >
+                  {savedInvoiceIds[g.destination] ? "保存済み" : savingDestination === g.destination ? "保存中..." : `${g.destination}を確定して保存`}
+                </button>
+                <button style={btn()} disabled={g.includedLines.length === 0} onClick={() => downloadImageFor(g.destination)}>
+                  {g.destination}をPNG保存
+                </button>
+              </div>
+            </section>
+          ))}
+
+          {printableGroups.length > 0 && (
+            <section style={card()}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+                <h3 style={h3()}>プレビュー（全店舗・A4印刷用）</h3>
+                <button style={btn(true)} onClick={handlePrintAll}>印刷する</button>
+              </div>
+              <div style={{ overflowX: "auto" }}>
+                <div id="invoice-print-area" style={{ width: "210mm", maxWidth: "none", margin: "0 auto", background: "#fff" }}>
+                  {printableGroups.map((g) => (
+                    <div key={g.destination} ref={(el) => storeRefs.current.set(g.destination, el)} style={{ marginBottom: 12, border: `1px solid ${T.softBorder}` }}>
+                      <InvoicePreview invoiceDate={date} destination={g.destination} lineItems={g.lineItems} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </section>
+          )}
+        </>
       )}
     </div>
   );

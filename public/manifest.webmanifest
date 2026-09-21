@@ -1,0 +1,16 @@
+{
+  "name": "角倉伝票",
+  "short_name": "角倉伝票",
+  "description": "旨味フーズ 発注・出荷・納品書管理",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f7f7f3",
+  "theme_color": "#1a1a1a",
+  "lang": "ja",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
