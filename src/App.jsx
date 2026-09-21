@@ -1324,7 +1324,7 @@ function buildLineItemsForInvoice(lines) {
   });
 }
 
-function InvoicePreview({ invoiceDate, destination, lineItems }) {
+function InvoicePreview({ invoiceDate, destination, lineItems, showTitle = true, showTotals = true }) {
   const sameDay = lineItems.filter((li) => isSameDayCategory(li.delivery_category));
   const takkyu = lineItems.filter((li) => !isSameDayCategory(li.delivery_category));
   const totals = buildInvoiceTotals(lineItems);
@@ -1357,10 +1357,14 @@ function InvoicePreview({ invoiceDate, destination, lineItems }) {
       className="invoice-store-block"
       style={{ width: "100%", boxSizing: "border-box", background: "#fff", padding: "8mm 10mm", fontFamily: "system-ui, sans-serif", color: "#222" }}
     >
-      <div style={{ display: "flex", alignItems: "baseline", gap: 18, borderBottom: "2px solid #333", paddingBottom: 6, marginBottom: 10 }}>
-        <h2 style={{ fontSize: 20, margin: 0 }}>納品書</h2>
-        <span style={{ fontSize: 13, color: "#555" }}>{formatMD(invoiceDate)}（{weekdayJa(invoiceDate)}）</span>
-      </div>
+      {showTitle ? (
+        <div style={{ display: "flex", alignItems: "baseline", gap: 18, borderBottom: "2px solid #333", paddingBottom: 6, marginBottom: 10 }}>
+          <h2 style={{ fontSize: 20, margin: 0 }}>納品書</h2>
+          <span style={{ fontSize: 13, color: "#555" }}>{formatMD(invoiceDate)}（{weekdayJa(invoiceDate)}）</span>
+        </div>
+      ) : (
+        <div style={{ borderTop: "1px solid #ccc", margin: "10px 0" }} />
+      )}
       <p style={{ fontSize: 15, fontWeight: 700, margin: "0 0 10px" }}>{destination} 様</p>
 
       {sameDay.map(renderLine)}
@@ -1374,11 +1378,13 @@ function InvoicePreview({ invoiceDate, destination, lineItems }) {
         </div>
       ))}
 
-      <div style={{ marginTop: 14, borderTop: "2px solid #333", paddingTop: 8, fontSize: 13 }}>
-        <div style={{ display: "flex", justifyContent: "space-between" }}><span>商品合計</span><span>{fmtYen(totals.subtotal)}</span></div>
-        <div style={{ display: "flex", justifyContent: "space-between" }}><span>消費税(8%)</span><span>{fmtYen(totals.tax)}</span></div>
-        <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: 15, marginTop: 4 }}><span>税込合計</span><span>{fmtYen(totals.total)}</span></div>
-      </div>
+      {showTotals && (
+        <div style={{ marginTop: 14, borderTop: "2px solid #333", paddingTop: 8, fontSize: 13 }}>
+          <div style={{ display: "flex", justifyContent: "space-between" }}><span>商品合計</span><span>{fmtYen(totals.subtotal)}</span></div>
+          <div style={{ display: "flex", justifyContent: "space-between" }}><span>消費税(8%)</span><span>{fmtYen(totals.tax)}</span></div>
+          <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: 15, marginTop: 4 }}><span>税込合計</span><span>{fmtYen(totals.total)}</span></div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1390,7 +1396,7 @@ function InvoicePreview({ invoiceDate, destination, lineItems }) {
 // まとめて（店舗ごとにわかりやすく区切って）1つのA4印刷用プレビューに表示する。
 // 保存自体は従来どおりinvoices/invoice_line_itemsに店舗ごとに1件ずつ作る
 // （HistoryPanelが店舗単位の閲覧を前提にしているため、データモデルは変更しない）。
-function InvoicePanel({ date, manuscriptItemById }) {
+function InvoicePanel({ date }) {
   const [items, setItems] = useState([]);
   const [loadingItems, setLoadingItems] = useState(false);
   const [loadErr, setLoadErr] = useState("");
@@ -1415,93 +1421,43 @@ function InvoicePanel({ date, manuscriptItemById }) {
     [items]
   );
 
-  const [included, setIncluded] = useState({}); // line_actual_items.id -> bool（全店舗ぶんまとめて持つ）
   const [err, setErr] = useState("");
-  const [savingDestination, setSavingDestination] = useState(null);
   const [savedInvoiceIds, setSavedInvoiceIds] = useState({}); // destination -> invoice.id（このセッション中に保存したもの）
-  const storeRefs = useRef(new Map()); // destination -> DOM node（PNG出力用）
 
-  useEffect(() => {
-    // 新しく見えた行だけデフォルト値（未納品書化のものを含める）を設定し、
-    // 既にユーザーがチェックを変更した行の状態は上書きしない。
-    setIncluded((prev) => {
-      const next = { ...prev };
-      let changed = false;
-      items.forEach((l) => {
-        if (!(l.id in next)) {
-          next[l.id] = !l.invoice_id;
-          changed = true;
-        }
-      });
-      return changed ? next : prev;
-    });
-  }, [items]);
-
-  // 警告表示の条件: 原稿と紐付いていて(linked)、かつ単位が一致している場合に限る。
-  // 単位不明・不一致はcomparePriceがunit_unknown/unit_mismatchを返すのでカウントしない
-  // （kento指示どおり、その場合は比較せずその旨だけ表示する）。
-  const compareFor = (l) => {
-    const mi = l.manuscript_item_id ? manuscriptItemById.get(l.manuscript_item_id) : null;
-    return comparePrice({
-      manuscriptPrice: mi ? mi.unit_price : null,
-      manuscriptUnit: mi ? mi.price_unit : null,
-      actualPrice: l.purchase_price != null ? Number(l.purchase_price) : null,
-      actualUnit: l.purchase_price_unit || null,
-    });
-  };
-
+  // その日のLINE実績データは、店舗を問わず最初から全件を納品書に含める
+  // （kento指示: 一店舗ごとにチェックして含める/含めないを選ぶ作業は廃止。
+  //  間違いがあれば原稿チェック側のページで直す運用のため）。
   const byDestination = useMemo(
     () =>
       destinations.map((dest) => {
         const destLines = items.filter((l) => l.destination === dest);
-        const includedLines = destLines.filter((l) => included[l.id]);
-        const lineItems = buildLineItemsForInvoice(includedLines);
-        const totals = buildInvoiceTotals(lineItems);
-        const warnCount = includedLines.filter((l) => compareFor(l).status === "up").length;
-        return { destination: dest, destLines, includedLines, lineItems, totals, warnCount };
+        const lineItems = buildLineItemsForInvoice(destLines);
+        return { destination: dest, destLines, lineItems };
       }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [destinations, items, included, manuscriptItemById]
+    [destinations, items]
   );
 
   // 1店舗ぶんのinvoices/invoice_line_items作成＋line_actual_itemsへのinvoice_idマーキング。
-  // saveOne（個別保存）とsaveAll（一括保存）の両方から呼ぶ共通処理。
   const saveGroup = async (group) => {
+    const totals = buildInvoiceTotals(group.lineItems);
     const [invoice] = await db.insert("invoices", {
       invoice_date: date,
       destination: group.destination,
-      subtotal: group.totals.subtotal,
-      tax: group.totals.tax,
-      total: group.totals.total,
+      subtotal: totals.subtotal,
+      tax: totals.tax,
+      total: totals.total,
     });
     const rows = group.lineItems.map((li, idx) => ({ ...li, invoice_id: invoice.id, sort_order: idx }));
     await db.insertMany("invoice_line_items", rows);
-    await Promise.all(group.includedLines.map((l) => db.update("line_actual_items", l.id, { invoice_id: invoice.id })));
+    await Promise.all(group.destLines.map((l) => db.update("line_actual_items", l.id, { invoice_id: invoice.id })));
     return invoice;
   };
 
-  const saveOne = async (dest) => {
-    const group = byDestination.find((g) => g.destination === dest);
-    if (!group || group.includedLines.length === 0) return;
-    setSavingDestination(dest);
-    setErr("");
-    try {
-      const invoice = await saveGroup(group);
-      setSavedInvoiceIds((prev) => ({ ...prev, [dest]: invoice.id }));
-      await loadItems();
-    } catch (e) {
-      setErr(`${dest}の納品書保存に失敗しました: ` + (e.message || e));
-    } finally {
-      setSavingDestination(null);
-    }
-  };
-
-  // 未保存の店舗（含める商品が1件以上あり、まだ保存していないもの）をまとめて
-  // 1つずつ順番に保存する（kento指示: 2026-09-21「一括保存ほしい」）。
-  // 並行実行にすると同じタイミングのinvoice作成やline_actual_itemsの更新が
-  // 競合しうるため、あえて直列（for...of + await）で処理する。
+  // 未保存の店舗（実績データが1件以上あり、まだ保存していないもの）をまとめて
+  // 1つずつ順番に保存する。並行実行にすると同じタイミングのinvoice作成や
+  // line_actual_itemsの更新が競合しうるため、あえて直列（for...of + await）で処理する。
   const [savingAll, setSavingAll] = useState(false);
-  const unsavedGroups = byDestination.filter((g) => g.includedLines.length > 0 && !savedInvoiceIds[g.destination]);
+  const unsavedGroups = byDestination.filter((g) => g.lineItems.length > 0 && !savedInvoiceIds[g.destination]);
 
   const saveAll = async () => {
     if (unsavedGroups.length === 0) return;
@@ -1531,22 +1487,10 @@ function InvoicePanel({ date, manuscriptItemById }) {
     window.print();
   };
 
-  const downloadImageFor = async (dest) => {
-    const node = storeRefs.current.get(dest);
-    if (!node) return;
-    try {
-      const html2canvas = (await import("html2canvas")).default;
-      const canvas = await html2canvas(node, { backgroundColor: "#fff", scale: 2 });
-      const link = document.createElement("a");
-      link.download = `納品書_${date}_${dest}.png`;
-      link.href = canvas.toDataURL("image/png");
-      link.click();
-    } catch (e) {
-      setErr(`${dest}の画像出力に失敗しました: ` + (e.message || e));
-    }
-  };
-
-  const printableGroups = byDestination.filter((g) => g.includedLines.length > 0);
+  const printableGroups = byDestination.filter((g) => g.lineItems.length > 0);
+  // 2026-09-21 追加変更（kento指示）: 店舗ごとの合計は出さず、その日にまとめて
+  // 作成する納品書全体で「商品合計＋消費税＝合計」を1回だけ表示する。
+  const grandTotals = buildInvoiceTotals(printableGroups.flatMap((g) => g.lineItems));
 
   return (
     <div>
@@ -1564,89 +1508,35 @@ function InvoicePanel({ date, manuscriptItemById }) {
               {unsavedGroups.length > 0 ? `未保存: ${unsavedGroups.length}店舗` : "すべての店舗を保存済みです"}
             </span>
             <button style={btn(true)} disabled={savingAll || unsavedGroups.length === 0} onClick={saveAll}>
-              {savingAll ? "一括保存中..." : `全店舗をまとめて保存（${unsavedGroups.length}件）`}
+              {savingAll ? "保存中..." : `納品書として保存（${unsavedGroups.length}店舗）`}
             </button>
           </section>
-
-          {byDestination.map((g) => (
-            <section key={g.destination} style={card()}>
-              <h3 style={h3()}>
-                {g.destination}
-                {savedInvoiceIds[g.destination] && <span style={{ fontSize: 11, color: T.textSub, fontWeight: 400, marginLeft: 8 }}>（保存済み）</span>}
-              </h3>
-              {g.warnCount > 0 && (
-                <div style={{ marginBottom: 8, color: T.warn, fontSize: 13 }}>⚠️ 原稿より高くなった商品が{g.warnCount}件含まれています。</div>
-              )}
-              <div style={{ overflowX: "auto" }}>
-                <table style={table()}>
-                  <thead>
-                    <tr>
-                      <th style={th()}>含める</th>
-                      <th style={th()}>品目</th>
-                      <th style={th()}>産地</th>
-                      <th style={th()}>数量/目方</th>
-                      <th style={th()}>仕入単価</th>
-                      <th style={th()}>原稿比較</th>
-                      <th style={th()}>金額</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {g.destLines.map((l) => {
-                      const li = buildLineItemsForInvoice([l])[0];
-                      const cmp = compareFor(l);
-                      return (
-                        <tr key={l.id} style={{ background: cmp.status === "up" ? T.warnBg : "transparent" }}>
-                          <td style={td()}><input type="checkbox" checked={!!included[l.id]} onChange={(e) => setIncluded((prev) => ({ ...prev, [l.id]: e.target.checked }))} /></td>
-                          <td style={td()}>
-                            {l.item_name}
-                            {l.invoice_id && <div style={{ fontSize: 10, color: T.textSub }}>（納品書化済み）</div>}
-                          </td>
-                          <td style={td()}>{l.origin}</td>
-                          <td style={td()}>{li.quantity ?? ""}{li.quantity_unit} {li.weight ? `/ ${li.weight}kg` : ""}</td>
-                          <td style={td()}>{li.unit_price ? `¥${li.unit_price.toLocaleString("ja-JP")}/${li.price_unit}` : "未入力"}</td>
-                          <td style={td()}>
-                            {cmp.status === "up" && <span style={{ color: T.warn, fontWeight: 700, fontSize: 12 }}>⚠️ +{fmtYen(cmp.diff)}</span>}
-                            {cmp.status === "down" && <span style={{ color: T.textSub, fontSize: 12 }}>{fmtYen(cmp.diff)}</span>}
-                            {cmp.status === "same" && <span style={{ color: T.ok, fontSize: 12 }}>±0</span>}
-                            {cmp.status === "no_manuscript_price" && <span style={{ color: T.textSub, fontSize: 12 }}>未紐付け</span>}
-                            {cmp.status === "unit_unknown" && <span style={{ color: T.textSub, fontSize: 11 }}>単位未確認</span>}
-                            {cmp.status === "unit_mismatch" && <span style={{ color: T.warn, fontSize: 11 }}>⚠️単位不一致</span>}
-                          </td>
-                          <td style={td()}>{fmtYen(li.amount)}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-              <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <button
-                  style={btn(true)}
-                  disabled={savingDestination === g.destination || savingAll || !!savedInvoiceIds[g.destination] || g.includedLines.length === 0}
-                  onClick={() => saveOne(g.destination)}
-                >
-                  {savedInvoiceIds[g.destination] ? "保存済み" : savingDestination === g.destination ? "保存中..." : `${g.destination}を確定して保存`}
-                </button>
-                <button style={btn()} disabled={g.includedLines.length === 0} onClick={() => downloadImageFor(g.destination)}>
-                  {g.destination}をPNG保存
-                </button>
-              </div>
-            </section>
-          ))}
 
           {printableGroups.length > 0 && (
             <section style={card()}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-                <h3 style={h3()}>プレビュー（全店舗・A4印刷用）</h3>
+                <h3 style={h3()}>プレビュー（A4印刷用）</h3>
                 <button style={btn(true)} onClick={handlePrintAll}>印刷する</button>
               </div>
               <div style={{ overflowX: "auto" }}>
-                <div id="invoice-print-area" style={{ width: "210mm", maxWidth: "none", margin: "0 auto", background: "#fff" }}>
-                  {printableGroups.map((g) => (
-                    <div key={g.destination} ref={(el) => storeRefs.current.set(g.destination, el)} style={{ marginBottom: 12, border: `1px solid ${T.softBorder}` }}>
-                      <InvoicePreview invoiceDate={date} destination={g.destination} lineItems={g.lineItems} />
-                    </div>
+                <div id="invoice-print-area" style={{ width: "210mm", maxWidth: "none", margin: "0 auto", background: "#fff", border: `1px solid ${T.softBorder}` }}>
+                  {printableGroups.map((g, idx) => (
+                    <InvoicePreview
+                      key={g.destination}
+                      invoiceDate={date}
+                      destination={g.destination}
+                      lineItems={g.lineItems}
+                      showTitle={idx === 0}
+                      showTotals={false}
+                    />
                   ))}
+                  <div style={{ padding: "0 10mm 8mm", background: "#fff", fontFamily: "system-ui, sans-serif", color: "#222" }}>
+                    <div style={{ borderTop: "2px solid #333", paddingTop: 8, fontSize: 13 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between" }}><span>商品合計</span><span>{fmtYen(grandTotals.subtotal)}</span></div>
+                      <div style={{ display: "flex", justifyContent: "space-between" }}><span>消費税(8%)</span><span>{fmtYen(grandTotals.tax)}</span></div>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: 15, marginTop: 4 }}><span>税込合計</span><span>{fmtYen(grandTotals.total)}</span></div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </section>
