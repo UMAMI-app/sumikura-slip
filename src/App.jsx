@@ -1448,9 +1448,8 @@ function InvoicePanel({ date: initialDate }) {
   );
 
   const [err, setErr] = useState("");
-  const [savedInvoiceIds, setSavedInvoiceIds] = useState({}); // destination -> invoice.id（このセッション中に保存したもの）
 
-  // その日のLINE実績データは、店舗を問わず最初から全件を納品書に含める
+  // その日のLINE実績データは、店舗を問わず最初から全件を納品書プレビューに含める
   // （kento指示: 一店舗ごとにチェックして含める/含めないを選ぶ作業は廃止。
   //  間違いがあれば原稿チェック側のページで直す運用のため）。
   const byDestination = useMemo(
@@ -1462,6 +1461,23 @@ function InvoicePanel({ date: initialDate }) {
       }),
     [destinations, items]
   );
+
+  // 2026-09-21 追加変更（kento指示）: 保存は店舗ごとではなく、PDF書き出しと同じく
+  // 「その日」単位の1つの操作にする。まだ納品書化されていない（invoice_idが
+  // 付いていない）実績行だけを対象にし、DB上の実際の状態から判定する
+  // （セッション内だけのフラグではなく、ページを開き直しても正しく判定できるように）。
+  const unsavedByDestination = useMemo(
+    () =>
+      destinations
+        .map((dest) => {
+          const destLines = items.filter((l) => l.destination === dest && !l.invoice_id);
+          const lineItems = buildLineItemsForInvoice(destLines);
+          return { destination: dest, destLines, lineItems };
+        })
+        .filter((g) => g.lineItems.length > 0),
+    [destinations, items]
+  );
+  const allSaved = items.length > 0 && unsavedByDestination.length === 0;
 
   // 1店舗ぶんのinvoices/invoice_line_items作成＋line_actual_itemsへのinvoice_idマーキング。
   const saveGroup = async (group) => {
@@ -1479,31 +1495,27 @@ function InvoicePanel({ date: initialDate }) {
     return invoice;
   };
 
-  // 未保存の店舗（実績データが1件以上あり、まだ保存していないもの）をまとめて
-  // 1つずつ順番に保存する。並行実行にすると同じタイミングのinvoice作成や
-  // line_actual_itemsの更新が競合しうるため、あえて直列（for...of + await）で処理する。
+  // その日の未保存分（店舗をまたいで）をまとめて1つの操作として保存する。
+  // 並行実行にすると同じタイミングのinvoice作成やline_actual_itemsの更新が
+  // 競合しうるため、あえて直列（for...of + await）で処理する
+  // （データ自体は従来どおりinvoices/invoice_line_itemsに店舗ごとに1件ずつ
+  //  作る。HistoryPanelが店舗単位の閲覧を前提にしているため）。
   const [savingAll, setSavingAll] = useState(false);
-  const unsavedGroups = byDestination.filter((g) => g.lineItems.length > 0 && !savedInvoiceIds[g.destination]);
 
   const saveAll = async () => {
-    if (unsavedGroups.length === 0) return;
+    if (unsavedByDestination.length === 0) return;
     setSavingAll(true);
     setErr("");
-    const newlySaved = {};
     const failedDestinations = [];
-    for (const group of unsavedGroups) {
+    for (const group of unsavedByDestination) {
       try {
-        const invoice = await saveGroup(group);
-        newlySaved[group.destination] = invoice.id;
+        await saveGroup(group);
       } catch (e) {
         failedDestinations.push(group.destination);
       }
     }
-    if (Object.keys(newlySaved).length > 0) {
-      setSavedInvoiceIds((prev) => ({ ...prev, ...newlySaved }));
-    }
     if (failedDestinations.length > 0) {
-      setErr(`一括保存に失敗した店舗があります: ${failedDestinations.join("、")}`);
+      setErr(`保存に失敗した店舗があります: ${failedDestinations.join("、")}`);
     }
     await loadItems();
     setSavingAll(false);
@@ -1566,10 +1578,10 @@ function InvoicePanel({ date: initialDate }) {
         <>
           <section style={{ ...card(), display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
             <span style={{ fontSize: 13, color: T.textSub }}>
-              {unsavedGroups.length > 0 ? `未保存: ${unsavedGroups.length}店舗` : "すべての店舗を保存済みです"}
+              {allSaved ? "この日の納品書は保存済みです" : "この日の納品書はまだ保存されていません"}
             </span>
-            <button style={btn(true)} disabled={savingAll || unsavedGroups.length === 0} onClick={saveAll}>
-              {savingAll ? "保存中..." : `納品書として保存（${unsavedGroups.length}店舗）`}
+            <button style={btn(true)} disabled={savingAll || unsavedByDestination.length === 0} onClick={saveAll}>
+              {savingAll ? "保存中..." : "納品書として保存"}
             </button>
           </section>
 
