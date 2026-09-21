@@ -262,6 +262,24 @@ function ManuscriptPanel({ date, items, loading, onSaved }) {
     }
   };
 
+  // 2026-09-21 追加変更（kento指示）: 保存済みの原稿もクリア（削除）できるようにする。
+  // manuscript_batchesを削除すればmanuscript_itemsはon delete cascadeでまとめて消える。
+  const [clearingSaved, setClearingSaved] = useState(false);
+  const clearSavedManuscript = async () => {
+    if (items.length === 0) return;
+    if (!window.confirm(`${date} に保存済みの原稿（${items.length}件）をすべて削除しますか？\nこの操作は取り消せません。`)) return;
+    setClearingSaved(true);
+    setErr("");
+    try {
+      await db.removeWhere("manuscript_batches", `?manuscript_date=eq.${date}`);
+      onSaved();
+    } catch (e) {
+      setErr("削除に失敗しました: " + (e.message || e));
+    } finally {
+      setClearingSaved(false);
+    }
+  };
+
   return (
     <div>
       <section style={card()}>
@@ -332,7 +350,14 @@ function ManuscriptPanel({ date, items, loading, onSaved }) {
       )}
 
       <section style={card()}>
-        <h3 style={h3()}>{date} に保存済みの原稿商品（{items.length}件）</h3>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+          <h3 style={h3()}>{date} に保存済みの原稿商品（{items.length}件）</h3>
+          {items.length > 0 && (
+            <button style={btn()} disabled={clearingSaved} onClick={clearSavedManuscript}>
+              {clearingSaved ? "削除中..." : "クリア"}
+            </button>
+          )}
+        </div>
         {loading ? (
           <p>読み込み中...</p>
         ) : items.length === 0 ? (
@@ -1538,7 +1563,6 @@ function InvoicePanel({ date: initialDate }) {
         .filter((g) => g.lineItems.length > 0),
     [destinations, items]
   );
-  const allSaved = items.length > 0 && unsavedByDestination.length === 0;
 
   // 1店舗ぶんのinvoices/invoice_line_items作成＋line_actual_itemsへのinvoice_idマーキング。
   const saveGroup = async (group) => {
@@ -1632,11 +1656,23 @@ function InvoicePanel({ date: initialDate }) {
   // 作成する納品書全体で「商品合計＋消費税＝合計」を1回だけ表示する。
   const grandTotals = buildInvoiceTotals(printableGroups.flatMap((g) => g.lineItems));
 
+  const saveDisabled = savingAll || unsavedByDestination.length === 0;
+
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
         <h2 style={{ ...h2(), marginBottom: 0 }}>納品書作成</h2>
         <input type="date" style={inputStyle()} value={date} onChange={(e) => setDate(e.target.value)} />
+        <button
+          style={{
+            ...btn(true),
+            ...(saveDisabled ? { background: T.border, borderColor: T.border, color: "#fff", cursor: "default" } : {}),
+          }}
+          disabled={saveDisabled}
+          onClick={saveAll}
+        >
+          {savingAll ? "保存中..." : "保存"}
+        </button>
       </div>
       {loadErr && <div style={{ color: T.warn, marginBottom: 12 }}>{loadErr}</div>}
       {err && <div style={{ color: T.warn, marginBottom: 12 }}>{err}</div>}
@@ -1646,15 +1682,6 @@ function InvoicePanel({ date: initialDate }) {
         <p style={{ color: T.textSub, fontSize: 13 }}>この日のLINE実績データに納品先がありません。</p>
       ) : (
         <>
-          <section style={{ ...card(), display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-            <span style={{ fontSize: 13, color: T.textSub }}>
-              {allSaved ? "この日の納品書は保存済みです" : "この日の納品書はまだ保存されていません"}
-            </span>
-            <button style={btn(true)} disabled={savingAll || unsavedByDestination.length === 0} onClick={saveAll}>
-              {savingAll ? "保存中..." : "納品書として保存"}
-            </button>
-          </section>
-
           {printableGroups.length > 0 && (
             <section style={card()}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
