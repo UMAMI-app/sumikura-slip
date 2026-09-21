@@ -1377,7 +1377,7 @@ const A4PreviewScaler = forwardRef(function A4PreviewScaler({ children }, ref) {
   }));
 
   return (
-    <div ref={outerRef} style={{ width: "100%", overflow: "hidden" }}>
+    <div ref={outerRef} style={{ width: "100%", minWidth: 0, overflow: "hidden" }}>
       <div ref={innerRef} style={{ display: "inline-block", transformOrigin: "top left" }}>
         {children}
       </div>
@@ -1882,7 +1882,7 @@ function HistoryPanel() {
         </section>
 
         {selectedDate && (
-          <section style={{ ...card(), flex: "1 1 400px" }}>
+          <section style={{ ...card(), flex: "1 1 400px", minWidth: 0 }}>
             {loadingDetail ? (
               <p>読み込み中...</p>
             ) : (
