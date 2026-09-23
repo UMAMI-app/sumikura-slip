@@ -257,6 +257,23 @@ export function parseLineShipmentText(rawText, referenceDateStr) {
       if (!lastItem) warnings.push(`「${line}」の対象の品目が見つかりませんでした`);
       continue;
     }
+    // 2026-09-24 追加変更（kento指示・3回目）: 「弘茂丸」は配送を担当する船（配送業者）の名前。
+    // ブロックのどこに出てきても新しい品目にはせず、そのブロックでこれまでに確定している
+    // 「最後の実品目」（送料を除く。送料は納品書に載らないため備考をつけても意味が無い）の
+    // 備考として追記する。「仕入／売値の直後」ルールでは拾えない位置（送料より後ろ等）に
+    // 出てくることがあるため、位置に関係なく「弘茂丸」という単語だけに反応する専用ルール。
+    const HIROSHIGEMARU_KEYWORD = '弘茂丸';
+    if (line.includes(HIROSHIGEMARU_KEYWORD)) {
+      const target = [...dest.items].reverse().find((it) => !/^送料/.test(it.item_name || ''));
+      if (target) {
+        target.note = target.note ? `${target.note} / ${line}` : line;
+      } else {
+        warnings.push(`「${line}」の対象の品目が見つかりませんでした`);
+      }
+      dest.awaitingPostPriceLine = false;
+      continue;
+    }
+
     // 「800g × 1本」のように、規格＋数量が品目名行の次の行に分かれて来ることがある（20章の例）。
     // 2026-09-23 追加変更（kento指示・2回目）: これは備考ではなく構造化データなので、下の
     // 「仕入／売値の直後は備考」判定より必ず先に判定する（判定の優先順位を明確にするため、

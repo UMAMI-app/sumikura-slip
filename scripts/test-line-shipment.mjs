@@ -136,3 +136,17 @@ console.log('OK: line shipment parser correctly skips store/orderer/request-note
 
   console.log('OK: free-text request lines right after 仕入／売値 are captured as notes, not new items (real reported blocks)');
 }
+
+// 2026-09-24 追加（kento指示・3回目）: 送料の数量よりさらに後ろ（ブロックの末尾）に出てくる
+// 「弘茂丸配送」が品目化されていた不具合の回帰テスト。「弘茂丸」というワードにだけ反応し、
+// 送料を除くそのブロックの最後の実品目の備考として追記する（位置は問わない）。
+{
+  const raw = `👤\n \n浦島一樹\n未確定\n角倉商店\n→\nよこい\n🚚 発送\n9/19\n📦 納品\n9/19午前中\n配達🚛\n極上　選り抜きハモ\n1.2 ㎏\n仕入 ¥4,900\n500g × 2本\n送料\n1 \n弘茂丸配送\n`;
+  const { destinations, warnings } = parseLineShipmentText(raw, '2026-09-19');
+  assert.equal(warnings.length, 0);
+  assert.equal(destinations.length, 1);
+  const yokoi = destinations[0];
+  assert.deepEqual(yokoi.items.map((it) => it.item_name), ['極上 選り抜きハモ', '送料']); // 「弘茂丸配送」が品目化されていない
+  assert.equal(yokoi.items[0].note, '弘茂丸配送'); // 送料を除く最後の実品目（極上 選り抜きハモ）の備考に入る
+  console.log('OK: "弘茂丸" anywhere in a block is attached as a note to the last real item, not captured as a new item');
+}

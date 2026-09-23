@@ -1006,7 +1006,15 @@ function LineActualPaste({ date, manuscriptItems, manuscriptItemById }) {
     if (!text.trim()) return;
     const { destinations, warnings } = parseLineShipmentText(text, date);
     const rows = buildLineActualRows(destinations, date, unitMap);
-    setPreview({ items: rows.map((row, idx) => ({ key: idx, ...row })), warnings });
+    // 2026-09-24 追加変更（kento指示）: レビュー画面から規格／産地の入力欄を削除したため、
+    // 抽出した規格・産地はここで品目名にそのまま含めてしまう（値が無ければ何も変わらない）。
+    const merged = rows.map((row) => ({
+      ...row,
+      item_name: [row.origin, row.item_name, row.spec].filter(Boolean).join(" ").trim(),
+      origin: "",
+      spec: "",
+    }));
+    setPreview({ items: merged.map((row, idx) => ({ key: idx, ...row })), warnings });
   };
 
   const updateItem = (key, patch) => {
@@ -1122,18 +1130,16 @@ function LineActualPaste({ date, manuscriptItems, manuscriptItemById }) {
     return (
       <div key={it.key} style={{ ...card(), marginBottom: 8, padding: 10 }}>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 6 }}>
-          <input style={{ ...inputStyle(), width: 120, fontWeight: 600 }} value={it.item_name ?? ""} onChange={(e) => updateItem(it.key, { item_name: e.target.value })} />
-          <input style={{ ...inputStyle(), width: 70 }} placeholder="規格" value={it.spec ?? ""} onChange={(e) => updateItem(it.key, { spec: e.target.value })} />
-          <input style={{ ...inputStyle(), width: 60 }} placeholder="産地" value={it.origin ?? ""} onChange={(e) => updateItem(it.key, { origin: e.target.value })} />
+          <input style={{ ...inputStyle(), width: 132, fontWeight: 600 }} value={it.item_name ?? ""} onChange={(e) => updateItem(it.key, { item_name: e.target.value })} />
           <label style={{ fontSize: 11, color: T.textSub }}>
             数量
             <input style={{ ...inputStyle(), width: 44, marginLeft: 4 }} value={it.quantity ?? ""} onChange={(e) => updateItem(it.key, { quantity: e.target.value ? parseFloat(e.target.value) : null })} />
             <input style={{ ...inputStyle(), width: 40, marginLeft: 4 }} value={it.quantity_unit ?? ""} onChange={(e) => updateItem(it.key, { quantity_unit: e.target.value })} />
           </label>
         </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 6 }}>
           <label style={{ fontSize: 11, color: T.textSub }}>
-            実重量
+            目方
             <input
               style={{ ...inputStyle(), width: 60, marginLeft: 4 }}
               value={it.actual_weight ?? ""}
@@ -1142,7 +1148,7 @@ function LineActualPaste({ date, manuscriptItems, manuscriptItemById }) {
             kg
           </label>
           <label style={{ fontSize: 11, color: T.textSub }}>
-            仕入価格
+            仕入値
             <input
               style={{ ...inputStyle(), width: 50, marginLeft: 4 }}
               placeholder="kg/本"
@@ -1156,7 +1162,15 @@ function LineActualPaste({ date, manuscriptItems, manuscriptItemById }) {
             />
           </label>
         </div>
-        {it.note ? <div style={{ fontSize: 11, color: T.textSub, marginTop: 4 }}>備考: {it.note}</div> : null}
+        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <label style={{ fontSize: 11, color: T.textSub, flexShrink: 0 }}>備考</label>
+          <input
+            style={{ ...inputStyle(), flex: 1, minWidth: 120 }}
+            placeholder="備考を追記"
+            value={it.note ?? ""}
+            onChange={(e) => updateItem(it.key, { note: e.target.value })}
+          />
+        </div>
       </div>
     );
   };
