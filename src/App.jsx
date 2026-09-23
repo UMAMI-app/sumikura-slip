@@ -1038,7 +1038,10 @@ function LineActualPaste({ date, manuscriptItems, manuscriptItemById }) {
       const payload = preview.items.map((it) => {
         const certain = isShippingRowName(it.item_name)
           ? null
-          : pickCertainCandidate({ item_name: it.item_name, spec: it.spec, origin: it.origin }, manuscriptItems);
+          : pickCertainCandidate(
+              { item_name: it.item_name, spec: it.spec, origin: it.origin, size_hint: it.size_hint, actual_weight: it.actual_weight, quantity: it.quantity, partial: it.partial },
+              manuscriptItems
+            );
         return {
         manuscript_item_id: certain ? certain.id : null,
         manuscript_price_status: certain ? "linked" : "none",

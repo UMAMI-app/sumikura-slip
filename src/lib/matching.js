@@ -71,11 +71,11 @@ export function searchManuscriptItems(query, manuscriptItems) {
 }
 
 // 規格・品目名から重さ（グラム）の範囲 [下限, 上限] を読み取る。読み取れなければnull。
-//   「850g」→[850,850]、「1.2kg」→[1200,1200]、「70g-80g」「500-700g」→範囲、「1kg〜1.5kg」→範囲
+//   「850g」→[850,850]、「1.2kg」「1.2k」→[1200,1200]、「70g-80g」「500-700g」→範囲、「1kg〜1.5kg」→範囲
 export function parseGramsRange(text) {
   const s = (text || '').replace(/㎏/g, 'kg').replace(/キロ/g, 'kg').replace(/ｇ/g, 'g').replace(/[０-９．]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0));
-  const toG = (v, u) => (/kg/i.test(u) ? v * 1000 : v);
-  let m = s.match(/(\d+(?:\.\d+)?)\s*(kg|g)?\s*[-~〜～]\s*(\d+(?:\.\d+)?)\s*(kg|g)/i);
+  const toG = (v, u) => (/^k/i.test(u || '') ? v * 1000 : v);
+  let m = s.match(/(\d+(?:\.\d+)?)\s*(kg|k|g)?\s*[-~〜～]\s*(\d+(?:\.\d+)?)\s*(kg|k|g)(?![a-z])/i);
   if (m) {
     const hiUnit = m[4];
     const loUnit = m[2] || hiUnit;
@@ -83,7 +83,7 @@ export function parseGramsRange(text) {
     const hi = toG(parseFloat(m[3]), hiUnit);
     return [Math.min(lo, hi), Math.max(lo, hi)];
   }
-  m = s.match(/(\d+(?:\.\d+)?)\s*(kg|g)(?![a-z])/i);
+  m = s.match(/(\d+(?:\.\d+)?)\s*(kg|k|g)(?![a-z])/i);
   if (m) {
     const g = toG(parseFloat(m[1]), m[2]);
     return [g, g];
@@ -121,7 +121,13 @@ export function pickCertainCandidate(lineItem, manuscriptItems) {
   const top = ranked[0];
   if (top.tier >= 3 && ranked[1].score !== top.score) return top.item;
 
-  const lineGrams = parseGramsRange(`${lineItem.spec || ''} ${lineItem.item_name || ''}`);
+  // LINE側の1本あたりの重さ: 品目名から外したサイズ表記(size_hint) → 規格・品目名 →
+  // 実際の目方÷数量（半身等の部位発注は1本あたりが分からないので使わない）の順で使う。
+  let lineGrams = parseGramsRange(`${lineItem.size_hint || ''} ${lineItem.spec || ''} ${lineItem.item_name || ''}`);
+  if (!lineGrams && !lineItem.partial && Number(lineItem.actual_weight) > 0 && Number(lineItem.quantity) > 0) {
+    const g = (Number(lineItem.actual_weight) * 1000) / Number(lineItem.quantity);
+    lineGrams = [g, g];
+  }
   if (!lineGrams) return null;
   const group = ranked.filter((c) => c.tier === top.tier);
   let pool;

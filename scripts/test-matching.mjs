@@ -63,4 +63,15 @@ assert.equal(pick({ item_name: 'ハモ' }), null); // 目方の記載なし
 const mixed = [...hamo, { id: 't800', item_name: 'ハモ', origin: '徳島', spec: '800g' }];
 assert.equal(pick({ item_name: 'ハモ', spec: '850g' }, mixed), null); // LINEに産地なし＆原稿に産地違い → 確定しない
 assert.equal(pick({ item_name: 'ハモ', spec: '850g', origin: '徳島' }, mixed), 't800');
+// サイズ表記を品目名から外した後も size_hint / 実際の目方÷数量 で目方が近いものを確定できる
+assert.equal(pick({ item_name: 'ハモ', size_hint: '850g' }), 'h800');
+assert.equal(pick({ item_name: 'ハモ', actual_weight: 1.7, quantity: 2 }), 'h800'); // 1本あたり850g
+assert.equal(pick({ item_name: 'ハモ', actual_weight: 0.85, quantity: null, partial: true }), null); // 部位発注は使わない
+// 鯛は一種類: 天然鯛SP(2k) → 活天然タイの目方が近い規格
+const taiMs = [
+  { id: 't1', item_name: '活天然タイ', origin: '兵庫', spec: 'SP 1-1.5k' },
+  { id: 't2', item_name: '活天然タイ', origin: '兵庫', spec: 'SP 2-2.5k' },
+];
+assert.equal(pickCertainCandidate({ item_name: '天然鯛SP', size_hint: '2k' }, taiMs)?.id, 't2');
+assert.equal(pickCertainCandidate({ item_name: '真鯛', actual_weight: 1.2, quantity: 1 }, taiMs)?.id, 't1');
 console.log('OK: 確実な候補のみデフォルト紐付け／天然鯛系→活天然タイSP／船名一致／原稿検索');

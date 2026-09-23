@@ -70,6 +70,45 @@ function isNoteLine(line) {
   return line.includes('⚠️') || NOTE_KEYWORDS.some((k) => line.includes(k));
 }
 
+// 2026-09-23 追加（kento指示・7回目）: 処理系の文言（内臓・エラ・血処理、水洗い、腹出し、鱗とり 等）は
+// 備考に残さず削除する。「処理」という語を含む行には必ず反応する。
+// （行は品目にもせず、備考にも入れずに読み捨てる。ただし同じ行に「半身」等の部位ワードがあれば
+//   それだけは備考に残す）
+const PROCESSING_RE = /処理|水洗い|腹出し|腹抜き|鱗とり|鱗かき|すき引き/;
+
+// 2026-09-23 追加（kento指示・7回目）: 1本まるまるではない発注を表すワード。品目名・規格・備考の
+// どこかにあれば、数量を空欄にし、ワード自体は備考に記載する。
+const PARTIAL_RE_G = /(?:背|腹)?\s*[1１]\s*[\/／]\s*[2-9２-９]|片身|肩身|半身/g;
+function findPartialWords(text) {
+  return ((text || '').match(PARTIAL_RE_G) || []).map((w) => w.replace(/\s+/g, '').replace(/[１-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0)).replace('／', '/'));
+}
+
+// 2026-09-23 追加（kento指示・7回目）: 送料のあたりに書かれる配送元・配送業者のワード。
+// ブロックのどこに出てきても品目にはせず、一つ上（直前）の実品目の備考に記載する。
+// （以前の「弘茂丸」専用ルールをこのリストに統合。「弘茂丸配送」「弘茂丸配達」も弘茂丸で反応する）
+const CARRIER_NOTE_WORDS = ['弘茂丸', 'キンコー', '近幸', '明石から', 'ヤマトから'];
+
+// 2026-09-23 追加（kento指示・7回目）: 品目名に続くサイズ表記（「600g」「2k」「500-700g」等）は
+// 削除し、実際の目方だけを記録する。削除したサイズは原稿との紐付け（目方が近いもの）の判定用に
+// size_hint として保持する（DBには保存しない）。
+const SIZE_BODY = '(?:約)?\\d+(?:\\.\\d+)?\\s*(?:g|ｇ|kg|㎏|k|キロ)?(?:\\s*[-~〜～]\\s*\\d+(?:\\.\\d+)?)?\\s*(?:g|ｇ|kg|㎏|k|キロ)(?:前後|位|くらい|up|UP|アップ|以上|以下|サイズ)?';
+const SIZE_FULL_RE = new RegExp(`^${SIZE_BODY}$`, 'i');
+const SIZE_TRAIL_RE = new RegExp(`\\s*${SIZE_BODY}$`, 'i');
+function isSizeText(t) {
+  return SIZE_FULL_RE.test((t || '').trim());
+}
+
+// 備考への追記（処理系は捨てる、部位ワードは記録する）
+function addNote(item, text) {
+  let t = (text || '').replace(/⚠️/g, '').trim();
+  const pw = t.match(/^[（(]([^)）]+)[)）]$/);
+  if (pw) t = pw[1].trim();
+  if (!t) return;
+  findPartialWords(t).forEach((w) => { if (!item.partialWords.includes(w)) item.partialWords.push(w); });
+  if (PROCESSING_RE.test(t)) return;
+  item.note = item.note ? `${item.note} / ${t}` : t;
+}
+
 // 実重量／仕入・売値／数量(+単位)／規格×数量 など、「品目名の直後に続くデータ」らしい行かどうか。
 // 備考の先読み判定専用（本来の各解析ロジックとは正規表現を共有せず、判定目的だけに使う）。
 function looksLikeItemContinuationLine(line) {
@@ -115,6 +154,16 @@ function resolveDate(month, day, referenceDateStr) {
 function parseItemNameLine(rawLine) {
   let s = rawLine.replace(/[　]/g, ' ').trim();
 
+  // 1本まるまるではない発注（半身・1/4 等）のワードを先に取り出す（「1/2本」の「2本」を
+  // 数量と誤認しないよう、数量の解析より前に行う）。
+  const partialWords = findPartialWords(s);
+  if (partialWords.length > 0) {
+    s = s.replace(new RegExp(`(?:${PARTIAL_RE_G.source})\\s*(?:本|尾)?`, 'g'), ' ')
+      .replace(/[（(]\s*[)）]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
   let quantity = null;
   let quantity_unit = '';
   const qm = s.match(/^(.*?)\s*[×x]?\s*(\d+(?:\.\d+)?)\s*(本|尾|杯|枚|個|箱|束|ケ|ヶ|パック|腹|匹|pc)\s*$/i);
@@ -147,7 +196,16 @@ function parseItemNameLine(rawLine) {
     }
   }
 
-  return { item_name: s.trim(), origin, spec, quantity, quantity_unit };
+  // サイズ表記は削除して size_hint に退避する（規格・品目名末尾のどちらでも）
+  let size_hint = '';
+  if (spec && isSizeText(spec)) { size_hint = spec; spec = ''; }
+  const tm = s.match(SIZE_TRAIL_RE);
+  if (tm && tm.index > 0) {
+    size_hint = size_hint || tm[0].trim();
+    s = s.slice(0, tm.index);
+  }
+
+  return { item_name: s.trim(), origin, spec, quantity, quantity_unit, size_hint, partialWords };
 }
 
 // 「送料」の見出し行。カッコ書きの補足（例:「送料(箱代含む)」）は許すが、それ以外の自由文
@@ -202,6 +260,17 @@ export function parseLineShipmentText(rawText, referenceDateStr) {
 
   const flushDest = () => {
     if (dest) {
+      // 部位ワード（半身・1/4 等）があれば、数量を空欄にしてワードを備考の先頭に記載する
+      dest.items.forEach((it) => {
+        findPartialWords(it.note).forEach((w) => { if (!it.partialWords.includes(w)) it.partialWords.push(w); });
+        if (it.partialWords.length > 0) {
+          it.partial = true;
+          it.quantity = null;
+          it.quantity_unit = '';
+          const missing = it.partialWords.filter((w) => !findPartialWords(it.note).includes(w));
+          if (missing.length > 0) it.note = [missing.join(' '), it.note].filter(Boolean).join(' / ');
+        }
+      });
       if (!dest.destinationName) warnings.push('納品先（「→」の次の行）が見つからないブロックがありました（スキップ）');
       else if (dest.items.length === 0) warnings.push(`${dest.destinationName}: 品目が見つかりませんでした`);
       else destinations.push(dest);
@@ -330,11 +399,11 @@ export function parseLineShipmentText(rawText, referenceDateStr) {
     // 「最後の実品目」の備考として追記する（送料は上のチェックでitems自体に入らなくなった
     // ので、除外の絞り込みは不要）。「仕入／売値の直後」ルールでは拾えない位置（末尾等）に
     // 出てくることがあるため、位置に関係なく「弘茂丸」という単語だけに反応する専用ルール。
-    const HIROSHIGEMARU_KEYWORD = '弘茂丸';
-    if (line.includes(HIROSHIGEMARU_KEYWORD)) {
+    if (CARRIER_NOTE_WORDS.some((w) => line.includes(w))) {
       const target = dest.items[dest.items.length - 1];
       if (target) {
-        target.note = target.note ? `${target.note} / ${line}` : line;
+        const t = line.replace(/^[（(]\s*|\s*[)）]$/g, '').trim();
+        target.note = target.note ? `${target.note} / ${t}` : t;
       } else {
         warnings.push(`「${line}」の対象の品目が見つかりませんでした`);
       }
@@ -348,7 +417,10 @@ export function parseLineShipmentText(rawText, referenceDateStr) {
     // 以下3つの構造化行チェックを備考チェックより前に移動した）。
     if ((m = line.match(/^(.+?)\s*[×x]\s*(\d+(?:\.\d+)?)\s*(本|尾|杯|枚|個|箱|束|ケ|ヶ|パック|腹|匹|pc)\s*$/i))) {
       if (lastItem) {
-        if (!lastItem.spec) lastItem.spec = m[1].trim();
+        const sp = m[1].trim();
+        if (isSizeText(sp)) { if (!lastItem.size_hint) lastItem.size_hint = sp; }
+        else if (!lastItem.spec) lastItem.spec = sp;
+        findPartialWords(sp).forEach((w) => { if (!lastItem.partialWords.includes(w)) lastItem.partialWords.push(w); });
         if (lastItem.quantity == null) {
           lastItem.quantity = parseFloat(m[2]);
           lastItem.quantity_unit = /^pc$/i.test(m[3]) ? 'pc' : m[3].replace('ケ', 'ヶ');
@@ -398,8 +470,7 @@ export function parseLineShipmentText(rawText, referenceDateStr) {
     // （品目名が空の品目ができてしまう）ため、位置に関係なく直前の実品目の備考として扱う。
     const wholeParen = line.match(/^[（(]([^)）]+)[)）]$/);
     if (wholeParen && lastItem) {
-      const t = wholeParen[1].trim();
-      if (t) lastItem.note = lastItem.note ? `${lastItem.note} / ${t}` : t;
+      addNote(lastItem, wholeParen[1]);
       dest.awaitingPostPriceLine = false;
       continue;
     }
@@ -412,17 +483,16 @@ export function parseLineShipmentText(rawText, referenceDateStr) {
           const qm = line.match(/^(.+?)\s*[×x]\s*(\d+(?:\.\d+)?)\s*(本|尾|杯|枚|個|箱|束|ケ|ヶ|パック|腹|匹|pc)/i);
           let noteText = line;
           if (qm) {
-            if (!lastItem.spec) lastItem.spec = qm[1].trim();
+            const sp = qm[1].trim();
+            if (isSizeText(sp)) { if (!lastItem.size_hint) lastItem.size_hint = sp; }
+            else if (!lastItem.spec) lastItem.spec = sp;
             if (lastItem.quantity == null) {
               lastItem.quantity = parseFloat(qm[2]);
               lastItem.quantity_unit = /^pc$/i.test(qm[3]) ? 'pc' : qm[3].replace('ケ', 'ヶ');
             }
             noteText = line.slice(qm[0].length).trim();
           }
-          noteText = noteText.replace(/⚠️/g, '').trim();
-          const pw = noteText.match(/^[（(]([^)）]+)[)）]$/);
-          if (pw) noteText = pw[1].trim();
-          if (noteText) lastItem.note = lastItem.note ? `${lastItem.note} / ${noteText}` : noteText;
+          addNote(lastItem, noteText);
         } else {
           warnings.push(`「${line}」の対象の品目が見つかりませんでした`);
         }
@@ -475,10 +545,14 @@ export function buildLineActualRows(destinations, orderDate, defaultUnitMap = {}
         spec: it.spec || '',
         // 2026-09-23 追加変更（kento指示）: 数量の記載が一切無かった場合は「1」＋品目ごとの
         // 数え方（guessQuantityUnit。既知パターンが無ければ「本」）をデフォルトにする。
-        quantity: it.quantity != null ? it.quantity : 1,
+        // 半身・1/4 等の部位発注は数量を空欄のままにする（kento指示 2026-09-23）
+        quantity: it.partial ? null : (it.quantity != null ? it.quantity : 1),
         // 廣田丸は原文の明記単位（pc等）より優先して必ず「枚」（forcedUnitForName）。
         // 「塩水ウニ(廣田丸)」のように括弧内（spec/origin）に書かれた場合も対象にする。
-        quantity_unit: forcedUnitForName([it.origin, it.item_name, it.spec].filter(Boolean).join(' ')) || it.quantity_unit || guessQuantityUnit(it.item_name),
+        quantity_unit: it.partial ? '' : (forcedUnitForName([it.origin, it.item_name, it.spec].filter(Boolean).join(' ')) || it.quantity_unit || guessQuantityUnit(it.item_name)),
+        // 以下2つはDBには保存しない（確定時の原稿紐付け判定用）
+        size_hint: it.size_hint || '',
+        partial: !!it.partial,
         actual_weight: it.actual_weight,
         actual_weight_unit: it.actual_weight_unit || (it.actual_weight != null ? 'kg' : ''),
         purchase_price: it.purchase_price,
