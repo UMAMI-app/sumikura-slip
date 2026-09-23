@@ -1990,7 +1990,7 @@ function InvoicePanel({ date: initialDate }) {
           {printableGroups.length > 0 && (
             <section style={card()}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-                <h3 style={h3()}>プレビュー（A4印刷用）</h3>
+                <h3 style={{ ...h3(), marginBottom: 0 }}>プレビュー（A4印刷用）</h3>
                 <button style={btn(true)} disabled={savingPdf} onClick={savePdfAll}>{savingPdf ? "PDF作成中..." : "PDFで保存"}</button>
               </div>
               <A4PreviewScaler ref={previewScalerRef}>
@@ -2015,6 +2015,7 @@ function HistoryPanel() {
   const [startDate, setStartDate] = useState(todayStr());
   const [endDate, setEndDate] = useState(todayStr());
   const [invoices, setInvoices] = useState([]);
+  const [listLineItems, setListLineItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
 
@@ -2042,6 +2043,18 @@ function HistoryPanel() {
         `?invoice_date=gte.${startDate}&invoice_date=lte.${endDate}&order=invoice_date.desc,destination.asc`
       );
       setInvoices(rows);
+      // 2026-09-23 追加（kento指示）: 一覧の各日付に利益も出すため、明細の金額・売値だけまとめて読む
+      if (rows.length > 0) {
+        try {
+          const ids = rows.map((r) => r.id).join(",");
+          const lis = await db.list("invoice_line_items", `?invoice_id=in.(${ids})&select=id,invoice_id,amount,sell_price`);
+          setListLineItems(lis);
+        } catch (e) {
+          setListLineItems([]);
+        }
+      } else {
+        setListLineItems([]);
+      }
     } catch (e) {
       setErr("検索に失敗しました: " + (e.message || e));
     } finally {
@@ -2056,12 +2069,18 @@ function HistoryPanel() {
     const groups = [];
     invoices.forEach((inv) => {
       let g = groups.find((x) => x.date === inv.invoice_date);
-      if (!g) { g = { date: inv.invoice_date, invoices: [], total: 0 }; groups.push(g); }
+      if (!g) { g = { date: inv.invoice_date, invoices: [], total: 0, subtotal: 0, profit: 0 }; groups.push(g); }
       g.invoices.push(inv);
       g.total += inv.total || 0;
+      // 2026-09-23 変更（kento指示）: 一覧の金額は税抜（商品合計）で表示する
+      g.subtotal += inv.subtotal || 0;
+    });
+    groups.forEach((g) => {
+      const ids = new Set(g.invoices.map((inv) => inv.id));
+      g.profit = buildProfitTotals(listLineItems.filter((li) => ids.has(li.invoice_id))).profit;
     });
     return groups;
-  }, [invoices]);
+  }, [invoices, listLineItems]);
 
   const openDate = async (group) => {
     // 2026-09-21 追加変更（kento指示）: 同じ日付をもう一度タップしたらプレビューを閉じる。
@@ -2116,6 +2135,7 @@ function HistoryPanel() {
       setSelectedGroups((prev) =>
         prev.map((g) => ({ ...g, items: g.items.map((it) => (it.id === itemId ? { ...it, sell_price: value } : it)) }))
       );
+      setListLineItems((prev) => prev.map((li) => (li.id === itemId ? { ...li, sell_price: value } : li)));
     } catch (e) {
       setErr("売値の保存に失敗しました: " + (e.message || e));
     } finally {
@@ -2202,7 +2222,10 @@ function HistoryPanel() {
                 <span onClick={() => openDate(g)} style={{ cursor: "pointer", flex: 1 }}>
                   {g.date}（{weekdayJa(g.date)}）
                 </span>
-                <span onClick={() => openDate(g)} style={{ cursor: "pointer", marginRight: 10 }}>{fmtYen(g.total)}</span>
+                <span onClick={() => openDate(g)} style={{ cursor: "pointer", marginRight: 10, textAlign: "right" }}>
+                  {fmtYen(g.subtotal)}
+                  <span style={{ marginLeft: 8, color: T.green, fontSize: 12 }}>利益 {fmtYen(g.profit)}</span>
+                </span>
                 <button
                   onClick={(e) => { e.stopPropagation(); deleteDate(g); }}
                   disabled={deletingDate === g.date}

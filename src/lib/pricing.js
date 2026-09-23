@@ -73,14 +73,19 @@ export const DELIVERY_CATEGORY_LABELS = {
 // 利益計算（2026-09-21 追加, kento指示）。
 // 納品書明細の金額(amount)がそのまま仕入れ値。売値を明細ごとに入力・保存できるようにし
 // （invoice_line_items.sell_price）、入力済みならその金額を使う。未入力なら仕入れ値から
-// 自動計算する: 1万円以上は1.1倍、1万円未満は1.15倍（消費税は考慮しない＝税抜のまま計算）。
+// 自動計算する: 1万円以上は1.1倍、1万円未満は1.15倍（消費税は考慮しない＝税抜のまま計算）、
+// 十の位を切り上げて100円単位にする。
 export function computeSellPrice(item) {
   const cost = item.amount || 0;
   if (item.sell_price != null && item.sell_price !== '') {
     return Math.round(Number(item.sell_price));
   }
   const rate = cost >= 10000 ? 1.1 : 1.15;
-  return Math.round(cost * rate);
+  // 2026-09-23 変更（kento指示）: 自動計算した売値は十の位を切り上げて100円単位にする
+  // （例: 4,200×1.15=4,830 → 4,900）。浮動小数の誤差（4000×1.1=4400.0000000000005 等）で
+  // 1つ上に切り上がらないよう、先に小数第2位で丸めてから切り上げる。
+  const raw = Math.round(cost * rate * 100) / 100;
+  return Math.ceil(raw / 100) * 100;
 }
 
 export function buildProfitTotals(lineItems) {
