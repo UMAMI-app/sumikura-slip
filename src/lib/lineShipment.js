@@ -332,7 +332,8 @@ export function parseLineShipmentText(rawText, referenceDateStr) {
     }
     if (line === '→') { dest.awaitingDestinationLine = true; continue; }
     if (dest.awaitingDestinationLine) {
-      dest.destinationName = line;
+      // 2026-09-23 追加（kento指示）: 店舗名に「株式会社」が入っていたら削除する
+      dest.destinationName = line.replace(/株式会社/g, '').replace(/\s+/g, ' ').trim() || line;
       dest.awaitingDestinationLine = false;
       continue;
     }

@@ -10,6 +10,7 @@ import {
   isSameDayCategory,
   DELIVERY_CATEGORY_LABELS,
   computeSellPrice,
+  computeSellUnitPrice,
   buildProfitTotals,
 } from "./lib/pricing";
 import { rankManuscriptCandidates, pickCertainCandidate, searchManuscriptItems } from "./lib/matching";
@@ -412,6 +413,11 @@ function h2() {
 function h3() {
   return { fontSize: 14, color: T.green, marginTop: 0 };
 }
+// 店舗名から「株式会社」を取り除く（kento指示 2026-09-23。保存済みの古いデータの表示用にも使う）
+function stripCompanyWords(name) {
+  return (name || "").replace(/株式会社/g, "").replace(/\s+/g, " ").trim();
+}
+
 // ページ見出し＋カレンダー（原稿・発注・チェック・納品書で共通。日付は全ページで共有）
 function DateHeader({ title, date, onDateChange, children }) {
   const today = todayStr();
@@ -1759,7 +1765,7 @@ function InvoicePreview({ invoiceDate, destination, lineItems, showTitle = true,
       {/* 2026-09-23 変更（kento指示）: 宅急便の発送→着日は店舗名の横には書かず、
           InvoiceDocumentの区切り見出し（「宅急便 9/23(水)→9/24(木)」）にまとめて記載する。 */}
       <p style={{ fontSize: 16.2, fontWeight: 700, margin: "9px 0" }}>
-        {destination} 様
+        {stripCompanyWords(destination)} 様
       </p>
 
       {itemHeader}
@@ -2317,12 +2323,17 @@ function HistoryPanel() {
                                 <td style={{ ...td(), textAlign: "right" }}>
                                   <input
                                     style={{ ...inputStyle(), width: 90, textAlign: "right" }}
-                                    placeholder={String(computeSellPrice({ amount: it.amount }))}
+                                    placeholder={String(computeSellPrice({ ...it, sell_price: null }))}
                                     value={sellPriceDrafts[it.id] ?? ""}
                                     disabled={savingSellPriceId === it.id}
                                     onChange={(e) => setSellPriceDrafts((prev) => ({ ...prev, [it.id]: e.target.value }))}
                                     onBlur={(e) => updateSellPrice(it.id, e.target.value)}
                                   />
+                                  {computeSellUnitPrice(it.unit_price) != null && (it.sell_price == null || it.sell_price === "") && (
+                                    <div style={{ fontSize: 10, color: T.textSub }}>
+                                      @{fmtYen(computeSellUnitPrice(it.unit_price))}/{it.price_unit || "?"}
+                                    </div>
+                                  )}
                                 </td>
                                 <td style={{ ...td(), textAlign: "right", fontWeight: 600 }}>{fmtYen(itemProfit)}</td>
                               </tr>

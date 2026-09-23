@@ -332,14 +332,14 @@ console.log('OK: line shipment parser correctly skips store/orderer/request-note
   assert.equal(warnings.length, 0);
   assert.deepEqual(destinations.map((d) => [d.destinationName, d.category, d.items.map((it) => it.item_name)]), [
     ['お料理宮本', 'ground', ['韓国ハモ', '氷じめアジ']],
-    ['株式会社銀座うち山', 'takkyu', ['カマス']],
+    ['銀座うち山', 'takkyu', ['カマス']], // 「株式会社」は削除
   ]);
   // 知らない発注元名でも「→」で新しいブロックになり、発注元名は品目に残らない
   const raw2 = raw.replace('\n\n角倉商店\n', '\n\n別の魚屋\n');
   const d2 = parseLineShipmentText(raw2, '2026-09-23').destinations;
   assert.deepEqual(d2.map((d) => [d.destinationName, d.items.map((it) => it.item_name)]), [
     ['お料理宮本', ['韓国ハモ', '氷じめアジ']],
-    ['株式会社銀座うち山', ['カマス']],
+    ['銀座うち山', ['カマス']],
   ]);
   console.log('OK: 👤なしで「角倉商店→店舗名」が続いても店舗ごとに分かれる');
 }
