@@ -261,10 +261,21 @@ console.log('OK: line shipment parser correctly skips store/orderer/request-note
     { qty: hirota.quantity, unit: hirota.quantity_unit, priceUnit: hirota.purchase_price_unit },
     { qty: 2, unit: '枚', priceUnit: '枚' }
   );
-  // 「塩水ウニ」ルールより廣田丸が優先される
-  const raw2 = `👤\n浦島一樹\n角倉商店\n→\nよこい\n🚚 発送\n9/23\n📦 納品\n9/23午前中\n配達🚛\n塩水ウニ(廣田丸)\n2 pc\n仕入 ¥3,000\n`;
-  const rows2 = buildLineActualRows(parseLineShipmentText(raw2, '2026-09-23').destinations, '2026-09-23', {});
-  assert.equal(rows2[0].quantity_unit, '枚');
-  assert.equal(rows2[0].purchase_price_unit, '枚');
-  console.log('OK: 廣田丸は原文に「pc」と明記されていても数量単位・単価単位とも必ず「枚」になる');
+  // 塩水ウニ以外のウニ系（与助丸・山由丸・由良ウニ・うに・雲丹 等）も、原文に pc/個 と書かれていても必ず「枚」
+  // 塩水ウニだけは対象外（原文の単位、無ければ pc）
+  const hdr = `👤\n浦島一樹\n角倉商店\n→\nよこい\n🚚 発送\n9/23\n📦 納品\n9/23午前中\n配達🚛\n`;
+  const body = ['与助丸', '山由丸', '由良ウニ', '生うに', '雲丹', '塩水ウニ(廣田丸)']
+    .map((n) => `${n}\n2 pc\n仕入 ¥3,000\n⚠️了解\n`).join('');
+  const rows2 = buildLineActualRows(parseLineShipmentText(hdr + body, '2026-09-23').destinations, '2026-09-23', {});
+  const got = Object.fromEntries(rows2.map((r) => [r.item_name, [r.quantity, r.quantity_unit, r.purchase_price_unit]]));
+  assert.deepEqual(got['与助丸'], [2, '枚', '枚']);
+  assert.deepEqual(got['山由丸'], [2, '枚', '枚']);
+  assert.deepEqual(got['由良ウニ'], [2, '枚', '枚']);
+  assert.deepEqual(got['生うに'], [2, '枚', '枚']);
+  assert.deepEqual(got['雲丹'], [2, '枚', '枚']);
+  assert.deepEqual(got['塩水ウニ'], [2, 'pc', 'pc']);
+  // 数量記載なしの山由丸も「1枚」
+  const rows3 = buildLineActualRows(parseLineShipmentText(hdr + '山由丸\n仕入 ¥5,000\n', '2026-09-23').destinations, '2026-09-23', {});
+  assert.deepEqual([rows3[0].quantity, rows3[0].quantity_unit, rows3[0].purchase_price_unit], [1, '枚', '枚']);
+  console.log('OK: 塩水ウニ以外のウニ系（廣田丸・与助丸・山由丸・ウニ・うに・雲丹）は原文にpcと明記されていても必ず「枚」');
 }
