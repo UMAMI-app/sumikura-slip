@@ -415,7 +415,8 @@ function h3() {
 }
 // 店舗名から「株式会社」を取り除く（kento指示 2026-09-23。保存済みの古いデータの表示用にも使う）
 function stripCompanyWords(name) {
-  return (name || "").replace(/株式会社/g, "").replace(/\s+/g, " ").trim();
+  const n = name || "";
+  return n.includes("株式会社") ? n.replace(/[\s　]*株式会社[\s　]*/g, "").trim() || n : n;
 }
 
 // ページ見出し＋カレンダー（原稿・発注・チェック・納品書で共通。日付は全ページで共有）
