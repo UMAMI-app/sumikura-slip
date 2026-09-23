@@ -43,12 +43,17 @@ const CATEGORY_MAP = [
   { re: /配達|配送/, category: 'ground' },
 ];
 
-// 2026-09-23 追加変更（kento指示）: 「仕入 ¥○○」の次に来る行は、基本的に必ず直前の品目の
+// 2026-09-23 追加変更（kento指示・1回目）: 「仕入 ¥○○」の次に来る行は、基本的に必ず直前の品目の
 // 「要望」欄である（新しい品目名にはならない）。ただし数量・規格がその行に書かれている場合は
 // それも拾う（例:「800g × 1本　⚠️水洗い」）。
 // 一方で、⚠️マークも数量も無い単独行（例:「水洗い」）は、新しい品目名なのか要望メモなのか
 // 記号だけでは判別できないため、実際によく出てくる処理メモ用語をリスト化し、これに一致する
 // 場合だけ要望として扱う（リストに無い言葉は今まで通り新しい品目名として扱われる＝安全側）。
+//
+// 2026-09-23 追加変更（kento指示・2回目）: 上記のキーワード一致だけでは「バッチリなものお願い
+// します」「肩身(骨なし)」「今回個人伝票になります。金額分かり次第教えてください！！」のような
+// 定型キーワードに含まれない自由記述の要望を拾いきれなかった（別途、行の「位置」でも判定する
+// ロジックを追加。isNoteLineは今でもキーワード一致の判定として使っている）。
 const NOTE_KEYWORDS = [
   '水洗い', '腹出し', '腹抜き', '鱗とり', '鱗かき', 'すき引き', '内臓処理', '処理なし',
 ];
@@ -145,6 +150,9 @@ export function parseLineShipmentText(rawText, referenceDateStr) {
     awaitingShipDate: false,
     awaitingDeliveryDate: false,
     awaitingMethod: false,
+    // 2026-09-23 追加変更（kento指示・2回目）: 「仕入／売値」の行を読んだ直後だけtrueにする
+    // フラグ。「仕入／売値の次に来る1行は備考」という位置ベースのルールをこれで実現する。
+    awaitingPostPriceLine: false,
     shipDate: null,
     deliveryDate: null,
     deliveryNote: '',
@@ -217,6 +225,7 @@ export function parseLineShipmentText(rawText, referenceDateStr) {
       if (lastItem) {
         lastItem.purchase_price = parseFloat(m[1].replace(/,/g, ''));
         lastItem.purchase_price_unit = m[2] || '';
+        dest.awaitingPostPriceLine = true; // 次の1行は原則として備考（2026-09-23 kento指示）
       } else {
         warnings.push(`「${line}」の対象の品目が見つかりませんでした`);
       }
@@ -227,6 +236,7 @@ export function parseLineShipmentText(rawText, referenceDateStr) {
     if ((m = line.match(/^売値\s*[¥￥]\s*([\d,]+)\s*$/))) {
       if (lastItem) {
         lastItem.note = lastItem.note ? `${lastItem.note} / ${line}` : line;
+        dest.awaitingPostPriceLine = true; // 仕入と同様、次の1行は原則として備考
       } else {
         warnings.push(`「${line}」の対象の品目が見つかりませんでした`);
       }
@@ -247,11 +257,53 @@ export function parseLineShipmentText(rawText, referenceDateStr) {
       if (!lastItem) warnings.push(`「${line}」の対象の品目が見つかりませんでした`);
       continue;
     }
-    // 2026-09-23 追加変更（kento指示）: ⚠️マーク付き、または処理メモ用語（NOTE_KEYWORDS）に
-    // 一致する行は、新しい品目名にはせず直前の品目の「要望」として扱う。
-    // 「800g × 1本　⚠️水洗い」のように数量・規格が同じ行に混じっていることもあるため、
-    // 先に数量+規格部分だけ抜き出し、残りのテキスト（⚠️マークを除く）を要望として保持する。
-    if (isNoteLine(line)) {
+    // 「800g × 1本」のように、規格＋数量が品目名行の次の行に分かれて来ることがある（20章の例）。
+    // 2026-09-23 追加変更（kento指示・2回目）: これは備考ではなく構造化データなので、下の
+    // 「仕入／売値の直後は備考」判定より必ず先に判定する（判定の優先順位を明確にするため、
+    // 以下3つの構造化行チェックを備考チェックより前に移動した）。
+    if ((m = line.match(/^(.+?)\s*[×x]\s*(\d+(?:\.\d+)?)\s*(本|尾|杯|枚|個|箱|束|ケ|ヶ|パック|腹|匹|pc)\s*$/i))) {
+      if (lastItem) {
+        if (!lastItem.spec) lastItem.spec = m[1].trim();
+        if (lastItem.quantity == null) {
+          lastItem.quantity = parseFloat(m[2]);
+          lastItem.quantity_unit = /^pc$/i.test(m[3]) ? 'pc' : m[3].replace('ケ', 'ヶ');
+        }
+        dest.awaitingPostPriceLine = false;
+      } else {
+        warnings.push(`「${line}」の対象の品目が見つかりませんでした`);
+      }
+      continue;
+    }
+    // 数量+単位だけの行（品目名行に数量が付いていなかった場合の継続行）
+    if ((m = line.match(/^(\d+(?:\.\d+)?)\s*(本|尾|杯|枚|個|箱|束|ケ|ヶ|パック|腹|匹|pc)$/i))) {
+      if (lastItem && lastItem.quantity == null) {
+        lastItem.quantity = parseFloat(m[1]);
+        lastItem.quantity_unit = /^pc$/i.test(m[2]) ? 'pc' : m[2].replace('ケ', 'ヶ');
+      } else if (!lastItem) {
+        warnings.push(`「${line}」の対象の品目が見つかりませんでした`);
+      }
+      dest.awaitingPostPriceLine = false;
+      continue;
+    }
+    // 数量だけの行（例:「送料」の次に来る「1」）
+    if ((m = line.match(/^(\d+(?:\.\d+)?)$/))) {
+      if (lastItem && lastItem.quantity == null) {
+        lastItem.quantity = parseFloat(m[1]);
+      } else {
+        warnings.push(`数量らしき行「${line}」の対象の品目が見つかりませんでした`);
+      }
+      dest.awaitingPostPriceLine = false;
+      continue;
+    }
+
+    // 2026-09-23 追加変更（kento指示・2回目）: 「仕入／売値」の行の直後に来る1行は、原則として
+    // 必ず直前の品目の「備考」である（新しい品目名にはしない）。これはキーワード一致
+    // （⚠️マークやNOTE_KEYWORDS）に関わらず適用する（例:「バッチリなものお願いします」
+    // 「肩身(骨なし)」「今回個人伝票になります。金額分かり次第教えてください！！」等、
+    // 定型キーワードではない自由記述の備考も同様に拾う）。
+    // ただし「送料」は常に新しい品目として扱う（仕入の直後に備考なしで送料が来ることがあるため）。
+    const isShippingFeeLine = /^送料/.test(line);
+    if (!isShippingFeeLine && (isNoteLine(line) || dest.awaitingPostPriceLine)) {
       if (lastItem) {
         const qm = line.match(/^(.+?)\s*[×x]\s*(\d+(?:\.\d+)?)\s*(本|尾|杯|枚|個|箱|束|ケ|ヶ|パック|腹|匹|pc)/i);
         let noteText = line;
@@ -268,40 +320,10 @@ export function parseLineShipmentText(rawText, referenceDateStr) {
       } else {
         warnings.push(`「${line}」の対象の品目が見つかりませんでした`);
       }
+      dest.awaitingPostPriceLine = false;
       continue;
     }
-    // 「800g × 1本」のように、規格＋数量が品目名行の次の行に分かれて来ることがある（20章の例）。
-    if ((m = line.match(/^(.+?)\s*[×x]\s*(\d+(?:\.\d+)?)\s*(本|尾|杯|枚|個|箱|束|ケ|ヶ|パック|腹|匹|pc)\s*$/i))) {
-      if (lastItem) {
-        if (!lastItem.spec) lastItem.spec = m[1].trim();
-        if (lastItem.quantity == null) {
-          lastItem.quantity = parseFloat(m[2]);
-          lastItem.quantity_unit = /^pc$/i.test(m[3]) ? 'pc' : m[3].replace('ケ', 'ヶ');
-        }
-      } else {
-        warnings.push(`「${line}」の対象の品目が見つかりませんでした`);
-      }
-      continue;
-    }
-    // 数量+単位だけの行（品目名行に数量が付いていなかった場合の継続行）
-    if ((m = line.match(/^(\d+(?:\.\d+)?)\s*(本|尾|杯|枚|個|箱|束|ケ|ヶ|パック|腹|匹|pc)$/i))) {
-      if (lastItem && lastItem.quantity == null) {
-        lastItem.quantity = parseFloat(m[1]);
-        lastItem.quantity_unit = /^pc$/i.test(m[2]) ? 'pc' : m[2].replace('ケ', 'ヶ');
-      } else if (!lastItem) {
-        warnings.push(`「${line}」の対象の品目が見つかりませんでした`);
-      }
-      continue;
-    }
-    // 数量だけの行（例:「送料」の次に来る「1」）
-    if ((m = line.match(/^(\d+(?:\.\d+)?)$/))) {
-      if (lastItem && lastItem.quantity == null) {
-        lastItem.quantity = parseFloat(m[1]);
-      } else {
-        warnings.push(`数量らしき行「${line}」の対象の品目が見つかりませんでした`);
-      }
-      continue;
-    }
+    dest.awaitingPostPriceLine = false;
 
     if (dest.destinationName && dest.methodRaw) {
       // ここまでの見出し情報が揃っていれば、以降は品目行として扱う
