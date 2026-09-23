@@ -43,6 +43,19 @@ const CATEGORY_MAP = [
   { re: /配達|配送/, category: 'ground' },
 ];
 
+// 2026-09-23 追加変更（kento指示）: 「仕入 ¥○○」の次に来る行は、基本的に必ず直前の品目の
+// 「要望」欄である（新しい品目名にはならない）。ただし数量・規格がその行に書かれている場合は
+// それも拾う（例:「800g × 1本　⚠️水洗い」）。
+// 一方で、⚠️マークも数量も無い単独行（例:「水洗い」）は、新しい品目名なのか要望メモなのか
+// 記号だけでは判別できないため、実際によく出てくる処理メモ用語をリスト化し、これに一致する
+// 場合だけ要望として扱う（リストに無い言葉は今まで通り新しい品目名として扱われる＝安全側）。
+const NOTE_KEYWORDS = [
+  '水洗い', '腹出し', '腹抜き', '鱗とり', '鱗かき', 'すき引き', '内臓処理', '処理なし',
+];
+function isNoteLine(line) {
+  return line.includes('⚠️') || NOTE_KEYWORDS.some((k) => line.includes(k));
+}
+
 function classifyCategory(text) {
   const found = CATEGORY_MAP.find((c) => c.re.test(text));
   return found ? found.category : 'ground';
@@ -66,7 +79,7 @@ function parseItemNameLine(rawLine) {
 
   let quantity = null;
   let quantity_unit = '';
-  const qm = s.match(/^(.*?)\s*[×x]?\s*(\d+(?:\.\d+)?)\s*(本|尾|杯|枚|個|箱|束|ケ|ヶ|パック|pc)\s*$/i);
+  const qm = s.match(/^(.*?)\s*[×x]?\s*(\d+(?:\.\d+)?)\s*(本|尾|杯|枚|個|箱|束|ケ|ヶ|パック|腹|匹|pc)\s*$/i);
   if (qm) {
     s = qm[1].trim();
     quantity = parseFloat(qm[2]);
@@ -215,8 +228,31 @@ export function parseLineShipmentText(rawText, referenceDateStr) {
       if (!lastItem) warnings.push(`「${line}」の対象の品目が見つかりませんでした`);
       continue;
     }
+    // 2026-09-23 追加変更（kento指示）: ⚠️マーク付き、または処理メモ用語（NOTE_KEYWORDS）に
+    // 一致する行は、新しい品目名にはせず直前の品目の「要望」として扱う。
+    // 「800g × 1本　⚠️水洗い」のように数量・規格が同じ行に混じっていることもあるため、
+    // 先に数量+規格部分だけ抜き出し、残りのテキスト（⚠️マークを除く）を要望として保持する。
+    if (isNoteLine(line)) {
+      if (lastItem) {
+        const qm = line.match(/^(.+?)\s*[×x]\s*(\d+(?:\.\d+)?)\s*(本|尾|杯|枚|個|箱|束|ケ|ヶ|パック|腹|匹|pc)/i);
+        let noteText = line;
+        if (qm) {
+          if (!lastItem.spec) lastItem.spec = qm[1].trim();
+          if (lastItem.quantity == null) {
+            lastItem.quantity = parseFloat(qm[2]);
+            lastItem.quantity_unit = /^pc$/i.test(qm[3]) ? 'pc' : qm[3].replace('ケ', 'ヶ');
+          }
+          noteText = line.slice(qm[0].length).trim();
+        }
+        noteText = noteText.replace(/⚠️/g, '').trim();
+        if (noteText) lastItem.note = lastItem.note ? `${lastItem.note} / ${noteText}` : noteText;
+      } else {
+        warnings.push(`「${line}」の対象の品目が見つかりませんでした`);
+      }
+      continue;
+    }
     // 「800g × 1本」のように、規格＋数量が品目名行の次の行に分かれて来ることがある（20章の例）。
-    if ((m = line.match(/^(.+?)\s*[×x]\s*(\d+(?:\.\d+)?)\s*(本|尾|杯|枚|個|箱|束|ケ|ヶ|パック|pc)\s*$/i))) {
+    if ((m = line.match(/^(.+?)\s*[×x]\s*(\d+(?:\.\d+)?)\s*(本|尾|杯|枚|個|箱|束|ケ|ヶ|パック|腹|匹|pc)\s*$/i))) {
       if (lastItem) {
         if (!lastItem.spec) lastItem.spec = m[1].trim();
         if (lastItem.quantity == null) {
@@ -229,7 +265,7 @@ export function parseLineShipmentText(rawText, referenceDateStr) {
       continue;
     }
     // 数量+単位だけの行（品目名行に数量が付いていなかった場合の継続行）
-    if ((m = line.match(/^(\d+(?:\.\d+)?)\s*(本|尾|杯|枚|個|箱|束|ケ|ヶ|パック|pc)$/i))) {
+    if ((m = line.match(/^(\d+(?:\.\d+)?)\s*(本|尾|杯|枚|個|箱|束|ケ|ヶ|パック|腹|匹|pc)$/i))) {
       if (lastItem && lastItem.quantity == null) {
         lastItem.quantity = parseFloat(m[1]);
         lastItem.quantity_unit = /^pc$/i.test(m[2]) ? 'pc' : m[2].replace('ケ', 'ヶ');
