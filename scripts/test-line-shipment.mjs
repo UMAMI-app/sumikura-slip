@@ -324,3 +324,22 @@ console.log('OK: line shipment parser correctly skips store/orderer/request-note
   assert.deepEqual(rows.map((r) => [r.item_name, r.quantity, r.note]), [['ブリ', null, '背身'], ['ブリ', null, '腹身'], ['マグロ', null, '1/3']]);
   console.log('OK: 背身・腹身・1/3 も数量空欄＋備考');
 }
+
+// 2026-09-23 追加（kento指示）: 👤・発注者名なしで「角倉商店 → 店舗名」のブロックが続く場合も店舗ごとに分かれる
+{
+  const raw = '角倉商店\n→\nお料理宮本\n🚚 発送\n9/23\n📦 納品\n9/23午前中\n配達🚛\n韓国ハモ\n0.86 ㎏\n仕入 ¥11,000\n氷じめアジ　兵庫\n0.44 ㎏\n仕入 ¥4,200\n送料\n1 \n\n角倉商店\n→\n株式会社銀座うち山\n🚚 発送\n9/23\n📦 納品\n9/24午前中\n宅急便\nカマス　5本\n1.7 ㎏\n仕入 ¥4,800\n送料(箱代含む)\n1 \n仕入 ¥2,200\n';
+  const { destinations, warnings } = parseLineShipmentText(raw, '2026-09-23');
+  assert.equal(warnings.length, 0);
+  assert.deepEqual(destinations.map((d) => [d.destinationName, d.category, d.items.map((it) => it.item_name)]), [
+    ['お料理宮本', 'ground', ['韓国ハモ', '氷じめアジ 兵庫']],
+    ['株式会社銀座うち山', 'takkyu', ['カマス']],
+  ]);
+  // 知らない発注元名でも「→」で新しいブロックになり、発注元名は品目に残らない
+  const raw2 = raw.replace('\n\n角倉商店\n', '\n\n別の魚屋\n');
+  const d2 = parseLineShipmentText(raw2, '2026-09-23').destinations;
+  assert.deepEqual(d2.map((d) => [d.destinationName, d.items.map((it) => it.item_name)]), [
+    ['お料理宮本', ['韓国ハモ', '氷じめアジ 兵庫']],
+    ['株式会社銀座うち山', ['カマス']],
+  ]);
+  console.log('OK: 👤なしで「角倉商店→店舗名」が続いても店舗ごとに分かれる');
+}

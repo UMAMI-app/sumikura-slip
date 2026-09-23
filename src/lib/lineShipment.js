@@ -300,6 +300,22 @@ export function parseLineShipmentText(rawText, referenceDateStr) {
     // 発注元（魚屋）名・ステータスは既知の値なら、まだ納品先が確定していない間は読み飛ばす
     // （内容ベースの二重チェック。位置ベースの読み飛ばしと合わせて、念のため二重に防ぐ）。
     if (!dest.destinationName && isKnownHeaderLine(line)) { continue; }
+    // 発注元（角倉商店）の次が「→」なら、位置に関係なく次のブロックの見出しなので品目にしない
+    if (KNOWN_SUPPLIER_NAMES.includes(line) && nextLine === '→') { continue; }
+    // 2026-09-23 追加（kento指示）: 「👤」や発注者名が無く「角倉商店 → 店舗名」から始まる
+    // ブロックが続けて貼られることがある。従来は2件目の「角倉商店」が1件目の品目として登録され、
+    // さらに2件目の「→」で1件目の納品先名が上書きされていた（1件目の店舗が消えていた）。
+    // 「→」の次は必ず店舗名なので、すでに納品先が決まっているブロックで「→」が来たら、
+    // そこから新しいブロックとして扱う（直前の行＝発注元名が品目として入っていれば取り除く）。
+    if (line === '→' && dest.destinationName) {
+      const prevLine = lines[i - 1];
+      const last = dest.items[dest.items.length - 1];
+      if (last && last.raw === prevLine) dest.items.pop();
+      flushDest();
+      dest = newDest();
+      dest.awaitingDestinationLine = true;
+      continue;
+    }
     if (line === '→') { dest.awaitingDestinationLine = true; continue; }
     if (dest.awaitingDestinationLine) {
       dest.destinationName = line;
