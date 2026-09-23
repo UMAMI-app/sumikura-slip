@@ -630,23 +630,6 @@ function OrdersPanel({ date, onDateChange, orderLines, onChanged }) {
     }
   };
 
-  const clearAllToday = async () => {
-    const now = Date.now();
-    if (confirmId !== "__ALL__") {
-      setConfirmId("__ALL__");
-      setConfirmAt(now);
-      return;
-    }
-    if (now - confirmAt < CONFIRM_MIN_MS) return; // 連続タップでの誤削除を防ぐ
-    setConfirmId(null);
-    try {
-      await db.removeWhere("order_lines", `?order_date=eq.${date}`);
-      setLocalLines([]);
-      onChanged();
-    } catch (e) {
-      setErr("全削除に失敗しました: " + (e.message || e));
-    }
-  };
 
   const deleteLine = async (id) => {
     // 1回目のタップで確認状態にし、少し間を置いてから同じ行をもう一度タップしたら実削除する。
@@ -832,18 +815,6 @@ function OrdersPanel({ date, onDateChange, orderLines, onChanged }) {
       <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
         <button style={btn()} onClick={() => setShowAddForm((v) => !v)}>{showAddForm ? "閉じる" : "+ 発注行を1件追加"}</button>
         <button style={btn()} onClick={() => setShowBulkForm((v) => !v)}>{showBulkForm ? "閉じる" : "一括貼り付けで追加"}</button>
-        <button
-          style={{
-            ...btn(),
-            marginLeft: "auto",
-            color: confirmId === "__ALL__" ? "#fff" : T.warn,
-            borderColor: T.warn,
-            background: confirmId === "__ALL__" ? T.warn : "#fff",
-          }}
-          onClick={clearAllToday}
-        >
-          {confirmId === "__ALL__" ? "本当に全削除する（もう一度タップ）" : "本日分を全削除（テスト用）"}
-        </button>
       </div>
 
       {showAddForm && (
