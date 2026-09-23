@@ -196,6 +196,20 @@ function parseItemNameLine(rawLine) {
     }
   }
 
+  // 2026-09-23 追加（kento指示）: 「氷じめアジ　兵庫」「真鯛 長崎県産」のように、品目名の後ろに
+  // スペース区切りで産地だけが書かれている場合は、品目名からは外して origin に保持する
+  // （品目名・納品書には出さず、チェック画面でのみ表示。原稿との紐付けにも使う）。
+  if (!origin && s.includes(' ')) {
+    const tokens = s.split(' ').filter(Boolean);
+    const kept = [tokens[0]];
+    tokens.slice(1).forEach((tok) => {
+      const hit = !origin && ORIGIN_NAMES.find((p) => new RegExp(`^${p}(?:都|道|府|県)?(?:産)?$`).test(tok));
+      if (hit) origin = tok;
+      else kept.push(tok);
+    });
+    s = kept.join(' ');
+  }
+
   // サイズ表記は削除して size_hint に退避する（規格・品目名末尾のどちらでも）
   let size_hint = '';
   if (spec && isSizeText(spec)) { size_hint = spec; spec = ''; }

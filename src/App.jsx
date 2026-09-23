@@ -1014,8 +1014,10 @@ function LineActualPaste({ date, manuscriptItems, manuscriptItemById }) {
     // 抽出した規格・産地はここで品目名にそのまま含めてしまう（値が無ければ何も変わらない）。
     const merged = rows.map((row) => ({
       ...row,
-      item_name: [row.origin, row.item_name, row.spec].filter(Boolean).join(" ").trim(),
-      origin: "",
+      // 2026-09-23 変更（kento指示）: 産地は品目名に含めず origin として保持する
+      // （品目名・納品書には出さず、チェック画面の確定済み一覧でのみ表示する）。
+      item_name: [row.item_name, row.spec].filter(Boolean).join(" ").trim(),
+      origin: row.origin || "",
       spec: "",
     }));
     setPreview({ items: merged.map((row, idx) => ({ key: idx, ...row })), warnings });
@@ -1332,6 +1334,7 @@ function LineActualPaste({ date, manuscriptItems, manuscriptItemById }) {
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12 }}>
                   <span>
                     {r.item_name}{r.spec ? `(${r.spec})` : ""}{" "}
+                    {r.origin ? <span style={{ color: T.textSub }}>［{r.origin}］</span> : null}{r.origin ? " " : ""}
                     {r.quantity != null && r.quantity !== "" ? `${r.quantity}${r.quantity_unit || ""} ` : ""}
                     {r.actual_weight != null && r.actual_weight !== "" ? `${r.actual_weight}${r.actual_weight_unit || "kg"} ` : ""}
                     {isShippingRowName(r.item_name)
@@ -1682,7 +1685,7 @@ function InvoicePreview({ invoiceDate, destination, lineItems, showTitle = true,
       style={{ display: "grid", gridTemplateColumns: ITEM_COLS, columnGap: 10, alignItems: "baseline", fontSize: 18, padding: "4px 0", borderBottom: "1px solid #ddd" }}
     >
       <span>
-        {li.item_name} {li.origin && `(${li.origin})`}
+        {li.item_name}{" "}
         {li.note ? <span style={{ fontSize: "0.8em", color: "#444" }}>({li.note})</span> : null}
       </span>
       <span style={{ textAlign: "right" }}>
