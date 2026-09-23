@@ -24,8 +24,8 @@
 //   赤ムツ(600g) 2本         … 品目名(規格) 数量+単位
 //   1.13㎏                   … 実重量
 //   仕入 ¥13,000             … 仕入価格（単位が書かれていないことが多い。勝手にkgと決めつけない）
-//   送料                     … 品目名だけの行（数量は次の行に来ることがある）
-//   1                       … 直前の品目(送料)の数量
+//   送料                     … 品目名だけの行。品目としては一切扱わない（2026-09-24 kento指示）。
+//   1                       … 「送料」の数量行。これも読み飛ばす（品目には反映しない）。
 //
 // 「仕入 ¥○○」の後に単位が明記されていない場合、purchase_price_unit は空文字のままにする
 // （空欄なら原稿の単価単位を基準に金額計算する。単位が判断できない場合はユーザーに選ばせる。20章）。
@@ -153,6 +153,9 @@ export function parseLineShipmentText(rawText, referenceDateStr) {
     // 2026-09-23 追加変更（kento指示・2回目）: 「仕入／売値」の行を読んだ直後だけtrueにする
     // フラグ。「仕入／売値の次に来る1行は備考」という位置ベースのルールをこれで実現する。
     awaitingPostPriceLine: false,
+    // 2026-09-24 追加変更（kento指示・4回目）: 「送料」の行を読んだ直後だけtrueにする
+    // フラグ。送料の次に来る数量だけの行（例:「1」）を、品目には一切反映せず読み飛ばすために使う。
+    awaitingShippingFeeQuantity: false,
     shipDate: null,
     deliveryDate: null,
     deliveryNote: '',
@@ -257,14 +260,27 @@ export function parseLineShipmentText(rawText, referenceDateStr) {
       if (!lastItem) warnings.push(`「${line}」の対象の品目が見つかりませんでした`);
       continue;
     }
+    // 2026-09-24 追加変更（kento指示・4回目）: 「送料」は品目として一切認識しない（items配列に
+    // 追加しない・備考にも入れない）。直後に来る数量だけの行（例:「1」）も送料の分なので、
+    // lastItem（＝送料より前の最後の実品目）には反映せずそのまま読み飛ばす。
+    if (/^送料/.test(line)) {
+      dest.awaitingPostPriceLine = false;
+      dest.awaitingShippingFeeQuantity = true;
+      continue;
+    }
+    if (dest.awaitingShippingFeeQuantity) {
+      dest.awaitingShippingFeeQuantity = false;
+      if (/^(\d+(?:\.\d+)?)$/.test(line)) { continue; } // 送料の数量行なので読み飛ばす
+      // 数字でなければ送料の数量行ではないため、下の通常の判定に流す。
+    }
     // 2026-09-24 追加変更（kento指示・3回目）: 「弘茂丸」は配送を担当する船（配送業者）の名前。
     // ブロックのどこに出てきても新しい品目にはせず、そのブロックでこれまでに確定している
-    // 「最後の実品目」（送料を除く。送料は納品書に載らないため備考をつけても意味が無い）の
-    // 備考として追記する。「仕入／売値の直後」ルールでは拾えない位置（送料より後ろ等）に
+    // 「最後の実品目」の備考として追記する（送料は上のチェックでitems自体に入らなくなった
+    // ので、除外の絞り込みは不要）。「仕入／売値の直後」ルールでは拾えない位置（末尾等）に
     // 出てくることがあるため、位置に関係なく「弘茂丸」という単語だけに反応する専用ルール。
     const HIROSHIGEMARU_KEYWORD = '弘茂丸';
     if (line.includes(HIROSHIGEMARU_KEYWORD)) {
-      const target = [...dest.items].reverse().find((it) => !/^送料/.test(it.item_name || ''));
+      const target = dest.items[dest.items.length - 1];
       if (target) {
         target.note = target.note ? `${target.note} / ${line}` : line;
       } else {
@@ -302,7 +318,7 @@ export function parseLineShipmentText(rawText, referenceDateStr) {
       dest.awaitingPostPriceLine = false;
       continue;
     }
-    // 数量だけの行（例:「送料」の次に来る「1」）
+    // 数量だけの行（送料の数量行は上で既に読み飛ばし済み。ここに来るのはそれ以外のケース）
     if ((m = line.match(/^(\d+(?:\.\d+)?)$/))) {
       if (lastItem && lastItem.quantity == null) {
         lastItem.quantity = parseFloat(m[1]);
@@ -317,10 +333,9 @@ export function parseLineShipmentText(rawText, referenceDateStr) {
     // 必ず直前の品目の「備考」である（新しい品目名にはしない）。これはキーワード一致
     // （⚠️マークやNOTE_KEYWORDS）に関わらず適用する（例:「バッチリなものお願いします」
     // 「肩身(骨なし)」「今回個人伝票になります。金額分かり次第教えてください！！」等、
-    // 定型キーワードではない自由記述の備考も同様に拾う）。
-    // ただし「送料」は常に新しい品目として扱う（仕入の直後に備考なしで送料が来ることがあるため）。
-    const isShippingFeeLine = /^送料/.test(line);
-    if (!isShippingFeeLine && (isNoteLine(line) || dest.awaitingPostPriceLine)) {
+    // 定型キーワードではない自由記述の備考も同様に拾う）。「送料」は上のチェックで既に
+    // 専用処理されているため、ここでの特別扱いは不要になった（2026-09-24 kento指示）。
+    if (isNoteLine(line) || dest.awaitingPostPriceLine) {
       if (lastItem) {
         const qm = line.match(/^(.+?)\s*[×x]\s*(\d+(?:\.\d+)?)\s*(本|尾|杯|枚|個|箱|束|ケ|ヶ|パック|腹|匹|pc)/i);
         let noteText = line;
@@ -363,11 +378,12 @@ export function parseLineShipmentText(rawText, referenceDateStr) {
 // 仕入価格の単位が原文に明記されていない場合、ここで初期値を埋める
 // （ウニ→枚、サンマ→本 等の既知パターン→学習済み単位→それも無ければkgの優先順位。
 // priceUnitGuess.js参照。ユーザーが確認画面で修正できることが前提）。
+// 2026-09-24 追加変更（kento指示・4回目）: 送料はparseLineShipmentText側で品目として
+// 一切扱わなくなった（items配列に追加されない）ため、ここでの送料除外フィルタは不要になった。
 export function buildLineActualRows(destinations, orderDate, defaultUnitMap = {}) {
   const rows = [];
   destinations.forEach((d) => {
-    // 送料は納品書には記載しないため、当面は品目としても取り込まない（一旦除外。復活する場合はここを外す）。
-    d.items.filter((it) => !/^送料/.test(it.item_name || '')).forEach((it) => {
+    d.items.forEach((it) => {
       rows.push({
         order_date: orderDate,
         destination: d.destinationName,
@@ -385,7 +401,7 @@ export function buildLineActualRows(destinations, orderDate, defaultUnitMap = {}
         actual_weight: it.actual_weight,
         actual_weight_unit: it.actual_weight_unit || (it.actual_weight != null ? 'kg' : ''),
         purchase_price: it.purchase_price,
-        purchase_price_unit: it.purchase_price_unit || (/^送料/.test(it.item_name || '') ? '' : guessPurchasePriceUnit(it.item_name, defaultUnitMap[it.item_name])),
+        purchase_price_unit: it.purchase_price_unit || guessPurchasePriceUnit(it.item_name, defaultUnitMap[it.item_name]),
         note: it.note || '',
         raw_line: it.raw,
       });

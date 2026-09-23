@@ -15,12 +15,13 @@ assert.equal(destinations.length, 2);
 
 const miyamoto = destinations[0];
 assert.equal(miyamoto.destinationName, 'お料理宮本');
-// 韓国ハモ・氷じめアジ・筋子・淡路コチ・カマス・サンマ・送料 の7件のみ（要望行が誤って
-// 品目化していた「800g × 1本 ⚠️水洗い」「水洗い」「2腹」「⚠️水洗い」の4件は含まれない）。
-assert.equal(miyamoto.items.length, 7);
+// 韓国ハモ・氷じめアジ・筋子・淡路コチ・カマス・サンマ の6件のみ（要望行が誤って品目化していた
+// 「800g × 1本 ⚠️水洗い」「水洗い」「2腹」「⚠️水洗い」の4件、および送料は含まれない。
+// 送料は2026-09-24（kento指示・4回目）以降、品目として一切扱わない）。
+assert.equal(miyamoto.items.length, 6);
 assert.deepEqual(
   miyamoto.items.map((it) => it.item_name),
-  ['韓国ハモ', '氷じめアジ', '筋子', '淡路コチ', 'カマス', 'サンマ', '送料']
+  ['韓国ハモ', '氷じめアジ', '筋子', '淡路コチ', 'カマス', 'サンマ']
 );
 
 const kankokuHamo = miyamoto.items.find((it) => it.item_name === '韓国ハモ');
@@ -43,10 +44,10 @@ assert.deepEqual({ spec: kamasu.spec, qty: kamasu.quantity, unit: kamasu.quantit
 
 const yokoi = destinations[1];
 assert.equal(yokoi.destinationName, 'よこい');
-assert.deepEqual(yokoi.items.map((it) => it.item_name), ['極上 選り抜きハモ', 'カツオ', '送料']);
+assert.deepEqual(yokoi.items.map((it) => it.item_name), ['極上 選り抜きハモ', 'カツオ']); // 送料は品目に含まれない
 
 const rows = buildLineActualRows(destinations, '2026-09-20', {});
-// 送料は納品書に載せないため除外される（既存仕様）。
+// 送料は品目として一切扱われないため、もともと納品書向けの行数とも一致する。
 assert.equal(rows.length, 8);
 
 console.log('OK: line shipment parser correctly skips store/orderer/request-note lines (real sample)');
@@ -60,7 +61,7 @@ console.log('OK: line shipment parser correctly skips store/orderer/request-note
   assert.equal(warnings.length, 0);
   assert.equal(destinations.length, 1);
   assert.equal(destinations[0].destinationName, 'よこい');
-  assert.deepEqual(destinations[0].items.map((it) => it.item_name), ['真鯛', '送料']);
+  assert.deepEqual(destinations[0].items.map((it) => it.item_name), ['真鯛']); // 送料は品目に含まれない
   console.log('OK: orderer/supplier/status header lines are never captured as items');
 }
 
@@ -95,7 +96,8 @@ console.log('OK: line shipment parser correctly skips store/orderer/request-note
 // 2026-09-23 追加（kento指示・2回目）: 「仕入／売値」の直後に来る行は、NOTE_KEYWORDSに
 // 一致しない自由記述であっても、新しい品目名にはせず直前の品目の「備考」として扱う不具合修正の
 // 回帰テスト（実際に貼り付けて品目化してしまったという報告があった5ブロックそのまま）。
-// ただし「送料」は仕入の直後に備考なしで来ても必ず新しい品目として扱う。
+// 送料は品目として一切扱われないため、各ブロックの品目一覧にも含まれない
+// （2026-09-24 kento指示・4回目）。
 {
   const raw = readFileSync(path.join(__dirname, 'sample_line_shipment_request_notes.txt'), 'utf-8');
   const { destinations, warnings } = parseLineShipmentText(raw, '2026-09-19');
@@ -104,12 +106,12 @@ console.log('OK: line shipment parser correctly skips store/orderer/request-note
 
   const nishioka = destinations[0];
   assert.equal(nishioka.destinationName, '鮨にし岡');
-  assert.deepEqual(nishioka.items.map((it) => it.item_name), ['迷いガツオ 腹1/4', '送料']);
+  assert.deepEqual(nishioka.items.map((it) => it.item_name), ['迷いガツオ 腹1/4']);
   assert.equal(nishioka.items[0].note, 'バッチリなものお願いします');
 
   const hanhan = destinations[1];
   assert.equal(hanhan.destinationName, '半々（ｶ)ｼﾞｭｳｲﾁ）');
-  assert.deepEqual(hanhan.items.map((it) => it.item_name), ['サワラ3.5kg', '極上ハモ', '送料']);
+  assert.deepEqual(hanhan.items.map((it) => it.item_name), ['サワラ3.5kg', '極上ハモ']);
   assert.equal(hanhan.items[0].note, '肩身(骨なし)'); // 「肩身(骨なし)」が品目化されていた不具合
   assert.deepEqual(
     { spec: hanhan.items[1].spec, qty: hanhan.items[1].quantity, unit: hanhan.items[1].quantity_unit },
@@ -126,12 +128,12 @@ console.log('OK: line shipment parser correctly skips store/orderer/request-note
 
   const wanoshoku = destinations[3];
   assert.equal(wanoshoku.destinationName, '和の食いがらし');
-  assert.deepEqual(wanoshoku.items.map((it) => it.item_name), ['天然鯛', 'スマカツオ 半身', '送料']);
+  assert.deepEqual(wanoshoku.items.map((it) => it.item_name), ['天然鯛', 'スマカツオ 半身']);
   assert.equal(wanoshoku.items[0].note, '2kg以下の場合は2枚‼️'); // ⚠️マーク付きの備考は従来通り拾える
 
   const shinozaki = destinations[4];
   assert.equal(shinozaki.destinationName, '篠崎　政考様');
-  assert.deepEqual(shinozaki.items.map((it) => it.item_name), ['カツオ 半身', '送料']);
+  assert.deepEqual(shinozaki.items.map((it) => it.item_name), ['カツオ 半身']);
   assert.equal(shinozaki.items[0].note, '‼️今回個人伝票になります。金額分かり次第教えてください！！'); // 「今回個人伝票」が品目化されていた不具合
 
   console.log('OK: free-text request lines right after 仕入／売値 are captured as notes, not new items (real reported blocks)');
@@ -139,14 +141,32 @@ console.log('OK: line shipment parser correctly skips store/orderer/request-note
 
 // 2026-09-24 追加（kento指示・3回目）: 送料の数量よりさらに後ろ（ブロックの末尾）に出てくる
 // 「弘茂丸配送」が品目化されていた不具合の回帰テスト。「弘茂丸」というワードにだけ反応し、
-// 送料を除くそのブロックの最後の実品目の備考として追記する（位置は問わない）。
+// そのブロックの最後の実品目の備考として追記する（位置は問わない）。
 {
   const raw = `👤\n \n浦島一樹\n未確定\n角倉商店\n→\nよこい\n🚚 発送\n9/19\n📦 納品\n9/19午前中\n配達🚛\n極上　選り抜きハモ\n1.2 ㎏\n仕入 ¥4,900\n500g × 2本\n送料\n1 \n弘茂丸配送\n`;
   const { destinations, warnings } = parseLineShipmentText(raw, '2026-09-19');
   assert.equal(warnings.length, 0);
   assert.equal(destinations.length, 1);
   const yokoi = destinations[0];
-  assert.deepEqual(yokoi.items.map((it) => it.item_name), ['極上 選り抜きハモ', '送料']); // 「弘茂丸配送」が品目化されていない
-  assert.equal(yokoi.items[0].note, '弘茂丸配送'); // 送料を除く最後の実品目（極上 選り抜きハモ）の備考に入る
-  console.log('OK: "弘茂丸" anywhere in a block is attached as a note to the last real item, not captured as a new item');
+  assert.deepEqual(yokoi.items.map((it) => it.item_name), ['極上 選り抜きハモ']); // 「送料」も「弘茂丸配送」も品目化されていない
+  assert.equal(yokoi.items[0].note, '弘茂丸配送'); // 最後の実品目（極上 選り抜きハモ）の備考に入る
+  console.log('OK: "弘茂丸" anywhere in a block is attached as a note to the last real item, and 送料 is never treated as an item or a note');
+}
+
+// 2026-09-24 追加（kento指示・4回目）: 「送料は品目として認識しない・備考にも入れない」の
+// 直接的な回帰テスト。仕入の直後に備考なしで送料が来るケース（カツオ）と、備考を挟んで
+// 送料が来るケース（極上ハモ）の両方を確認する。
+{
+  const raw = `👤\n \n浦島一樹\n未確定\n角倉商店\n→\nよこい\n🚚 発送\n9/24\n📦 納品\n9/24午前中\n配達🚛\nカツオ\n3.3 ㎏\n仕入 ¥1,600\n送料\n1\n極上ハモ\n0.48 ㎏\n仕入 ¥3,700\n肩身\n送料\n1\n`;
+  const { destinations, warnings } = parseLineShipmentText(raw, '2026-09-24');
+  assert.equal(warnings.length, 0);
+  const yokoi = destinations[0];
+  // 「送料」という品目名自体がどの品目にも含まれない・備考にも現れないことを確認する。
+  assert.deepEqual(yokoi.items.map((it) => it.item_name), ['カツオ', '極上ハモ']);
+  assert.equal(yokoi.items.some((it) => (it.note || '').includes('送料')), false);
+  const katsuo = yokoi.items.find((it) => it.item_name === 'カツオ');
+  assert.equal(katsuo.note, ''); // 仕入の直後に備考なしで送料が来ても、送料自体は備考に入らない
+  const hamo = yokoi.items.find((it) => it.item_name === '極上ハモ');
+  assert.equal(hamo.note, '肩身'); // 送料の手前にある本当の備考は従来通り拾う
+  console.log('OK: 送料 is never registered as an item and never leaks into any note text');
 }
