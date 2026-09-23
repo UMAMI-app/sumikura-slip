@@ -1,6 +1,6 @@
 // matching.js（LINE実績データ ↔ 原稿の紐付け候補）の回帰テスト。
 import assert from 'node:assert';
-import { rankManuscriptCandidates, pickCertainCandidate, searchManuscriptItems } from '../src/lib/matching.js';
+import { rankManuscriptCandidates, pickCertainCandidate, searchManuscriptItems, parseGramsRange } from '../src/lib/matching.js';
 
 const ms = [
   { id: 'tai-sp', item_name: '活天然タイ', origin: '兵庫', spec: 'SP' },
@@ -18,12 +18,16 @@ const certain = (name, extra = {}) => pickCertainCandidate({ item_name: name, ..
 for (const n of ['天然鯛', 'タイ', '天タイ', '鯛']) assert.equal(certain(n), 'tai-sp', n);
 // 完全一致で1件だけ → 確実
 assert.equal(certain('マアジ'), 'aji');
-// 表記揺れ・部分一致だけ → 確実ではない（デフォルト設定しない）
-assert.equal(certain('アジ'), null);
+// アジ → マアジ は確定（kento指示）
+assert.equal(certain('アジ'), 'aji');
+assert.equal(certain('鯵'), 'aji');
+// 部分一致で候補が複数（産地違い）→ 確実ではない
 assert.equal(certain('ハモ'), null);
 // 同名で産地違いが複数 → 産地の指定が無ければ確実ではない、あれば確実
 assert.equal(certain('極上ハモ'), null);
 assert.equal(certain('極上ハモ', { origin: '徳島' }), 'hamo1');
+// 選択肢が1つしかない（部分一致でも）→ 確実
+assert.equal(pickCertainCandidate({ item_name: 'サワラ' }, [{ id: 'sawara', item_name: '寒サワラ', origin: '', spec: '' }, ...ms])?.id, 'sawara');
 // 廣田丸（船名）→ 由良ウニ(廣田丸) が候補に出る（規格違い2件なので確実ではない）
 assert.deepEqual(rankManuscriptCandidates({ item_name: '廣田丸' }, ms).map((c) => c.item.id).sort(), ['uni-sp', 'uni-toku']);
 assert.equal(certain('廣田丸'), null);
@@ -31,4 +35,25 @@ assert.equal(certain('廣田丸'), null);
 assert.deepEqual(searchManuscriptItems('たい sp', ms).map((m) => m.id), ['tai-sp']);
 assert.deepEqual(searchManuscriptItems('廣田丸 特上', ms).map((m) => m.id), ['uni-toku']);
 assert.deepEqual(searchManuscriptItems('  ', ms), []);
+// 目方が近いもの（産地一致が条件）
+assert.deepEqual(parseGramsRange('70g-80g'), [70, 80]);
+assert.deepEqual(parseGramsRange('500-700g'), [500, 700]);
+assert.deepEqual(parseGramsRange('1.2kg'), [1200, 1200]);
+assert.deepEqual(parseGramsRange('1kg〜1.5kg'), [1000, 1500]);
+assert.equal(parseGramsRange('SP'), null);
+const hamo = [
+  { id: 'h600', item_name: 'ハモ', origin: '兵庫', spec: '600g' },
+  { id: 'h800', item_name: 'ハモ', origin: '兵庫', spec: '800g' },
+  { id: 'h1k', item_name: 'ハモ', origin: '兵庫', spec: '1kg' },
+];
+const pick = (it, list = hamo) => pickCertainCandidate(it, list)?.id ?? null;
+assert.equal(pick({ item_name: 'ハモ850g' }), 'h800'); // 産地が全て同じ → 一番近い800g
+assert.equal(pick({ item_name: 'ハモ', spec: '850g' }), 'h800');
+assert.equal(pick({ item_name: 'ハモ', spec: '850g', origin: '兵庫' }), 'h800');
+assert.equal(pick({ item_name: 'ハモ', spec: '850g', origin: '徳島' }), null); // 産地が一致しない
+assert.equal(pick({ item_name: 'ハモ', spec: '700g' }), null); // 600gと800gで同着
+assert.equal(pick({ item_name: 'ハモ' }), null); // 目方の記載なし
+const mixed = [...hamo, { id: 't800', item_name: 'ハモ', origin: '徳島', spec: '800g' }];
+assert.equal(pick({ item_name: 'ハモ', spec: '850g' }, mixed), null); // LINEに産地なし＆原稿に産地違い → 確定しない
+assert.equal(pick({ item_name: 'ハモ', spec: '850g', origin: '徳島' }, mixed), 't800');
 console.log('OK: 確実な候補のみデフォルト紐付け／天然鯛系→活天然タイSP／船名一致／原稿検索');

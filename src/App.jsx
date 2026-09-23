@@ -1449,6 +1449,97 @@ function buildLineItemsForInvoice(lines) {
   });
 }
 
+// 2026-09-23 修正（kento指示）: スマホでPDF書き出しすると文字が重なってぐちゃぐちゃになる不具合の修正と、
+// A4ページ送りの改善。
+// 原因: 納品書プレビューは画面幅に合わせて transform: scale() で縮小表示している。PDF化の瞬間だけ
+//   縮小を解除していたが、解除でサイズが変わるとResizeObserverが即座に縮小を掛け直してしまい、
+//   html2canvasが「縮小された位置」に「原寸の文字」を描いて重なっていた（縮小が掛かるスマホでだけ発生）。
+// 対策: 画面上の要素ではなく、html2canvasが内部で作る複製(onclone)側で祖先の縮小・はみ出し隠しを解除して
+//   原寸で撮影する（画面上の表示には一切触らない）。
+// ページ送り: 1枚の長い画像を機械的にA4の高さで切ると店舗の途中で行が真っ二つになるため、
+//   data-pdf-block を付けた塊（店舗ごとの納品書・合計欄）の切れ目で改ページする。
+//   1店舗だけでA4に入り切らない場合のみ、その店舗の途中で次ページに送る。
+// iPhoneのcanvasサイズ上限（約1,670万ピクセル）を超えると描画が壊れるため、撮影倍率を自動で下げる。
+// 納品書（PDF化する部分）のフォント。「system-ui」はhtml2canvasのcanvas描画側で別フォントとして
+// 扱われ、文字位置の計算と実際の描画がズレて文字が重なる原因になるため、具体的なフォント名を指定する。
+const INVOICE_FONT = "'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', 'Noto Sans CJK JP', 'Yu Gothic', Meiryo, sans-serif";
+
+async function exportA4Pdf(node, filename) {
+  const [{ default: html2canvas }, { jsPDF }] = await Promise.all([import("html2canvas"), import("jspdf")]);
+  const MM_TO_PX = 96 / 25.4;
+  const cssWidth = Math.round(210 * MM_TO_PX);
+  const cssHeight = Math.ceil(node.scrollHeight);
+  const MAX_AREA = 16000000;
+  const MAX_SIDE = 16000;
+  const scale = Math.max(0.5, Math.min(2, Math.sqrt(MAX_AREA / (cssWidth * cssHeight)), MAX_SIDE / cssHeight));
+
+  // offsetTop/offsetHeightは transform の影響を受けない（原寸のレイアウト値）
+  const blocks = Array.from(node.querySelectorAll("[data-pdf-block]")).map((el) => {
+    let top = 0;
+    let cur = el;
+    while (cur && cur !== node) { top += cur.offsetTop; cur = cur.offsetParent; }
+    return { top, bottom: top + el.offsetHeight };
+  }).sort((a, b) => a.top - b.top);
+
+  const canvas = await html2canvas(node, {
+    backgroundColor: "#fff",
+    scale,
+    width: cssWidth,
+    height: cssHeight,
+    windowWidth: Math.max(cssWidth + 40, 1024),
+    scrollX: 0,
+    scrollY: 0,
+    onclone: (doc, cloned) => {
+      let el = cloned;
+      while (el && el !== doc.documentElement) {
+        el.style.transform = "none";
+        el.style.overflow = "visible";
+        if (el.hasAttribute && el.hasAttribute("data-a4-outer")) el.style.height = "auto";
+        el = el.parentElement;
+      }
+    },
+  });
+
+  const pdf = new jsPDF({ unit: "mm", format: "a4" });
+  const pageW = 210;
+  const pageH = 297;
+  const pxPerMm = cssWidth / pageW;
+  const topMarginNextMm = 8;
+  const bottomMarginMm = 6;
+  let start = 0;
+  let page = 0;
+  while (start < cssHeight - 1) {
+    const usableMm = pageH - bottomMarginMm - (page === 0 ? 0 : topMarginNextMm);
+    const limit = start + usableMm * pxPerMm;
+    let end;
+    if (cssHeight <= limit) {
+      end = cssHeight;
+    } else {
+      end = start;
+      for (const b of blocks) {
+        if (b.bottom <= start) continue;
+        if (b.bottom <= limit) end = b.bottom;
+        else break;
+      }
+      if (end <= start + 1) end = limit; // 1ブロックだけでページに入り切らない → そのブロックの途中で改ページ
+    }
+    const sy = Math.floor(start * scale);
+    const sh = Math.min(canvas.height - sy, Math.ceil((end - start) * scale));
+    const slice = document.createElement("canvas");
+    slice.width = canvas.width;
+    slice.height = sh;
+    const ctx = slice.getContext("2d");
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, slice.width, slice.height);
+    ctx.drawImage(canvas, 0, sy, canvas.width, sh, 0, 0, canvas.width, sh);
+    if (page > 0) pdf.addPage();
+    pdf.addImage(slice.toDataURL("image/jpeg", 0.95), "JPEG", 0, page === 0 ? 0 : topMarginNextMm, pageW, sh / scale / pxPerMm);
+    start = end;
+    page += 1;
+  }
+  pdf.save(filename);
+}
+
 // 2026-09-21 追加変更（kento指示）: 納品書ページ・履歴ページのプレビューを、
 // 実際に書き出すPDFの見た目に近づける（A4ページ全体が画面幅に収まるよう
 // 自動で縮小表示する）。PDF化する瞬間だけ原寸に戻してhtml2canvasで撮影し、
@@ -1500,7 +1591,7 @@ const A4PreviewScaler = forwardRef(function A4PreviewScaler({ children }, ref) {
   }));
 
   return (
-    <div ref={outerRef} style={{ width: "100%", minWidth: 0, overflow: "hidden" }}>
+    <div ref={outerRef} data-a4-outer="1" style={{ width: "100%", minWidth: 0, overflow: "hidden" }}>
       <div ref={innerRef} style={{ display: "inline-block", transformOrigin: "top left" }}>
         {children}
       </div>
@@ -1559,7 +1650,8 @@ function InvoicePreview({ invoiceDate, destination, lineItems, showTitle = true,
   return (
     <div
       className="invoice-store-block"
-      style={{ width: "100%", boxSizing: "border-box", background: "#fff", padding: "2.7mm 10mm", fontFamily: "system-ui, sans-serif", color: "#222" }}
+      data-pdf-block="1"
+      style={{ width: "100%", boxSizing: "border-box", background: "#fff", padding: "2.7mm 10mm", fontFamily: INVOICE_FONT, color: "#222" }}
     >
       {showTitle ? (
         <div style={{ display: "flex", alignItems: "baseline", gap: 16.2, borderBottom: "2px solid #333", paddingBottom: 5.4, marginBottom: 9 }}>
@@ -1714,34 +1806,8 @@ function InvoicePanel({ date: initialDate }) {
     if (!node) return;
     setSavingPdf(true);
     setErr("");
-    const capture = async () => {
-      const [{ default: html2canvas }, { jsPDF }] = await Promise.all([import("html2canvas"), import("jspdf")]);
-      const canvas = await html2canvas(node, { backgroundColor: "#fff", scale: 2 });
-      const imgData = canvas.toDataURL("image/png");
-      const pdf = new jsPDF({ unit: "mm", format: "a4" });
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const pageHeight = pdf.internal.pageSize.getHeight();
-      const imgWidth = pageWidth;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      let heightLeft = imgHeight;
-      let position = 0;
-      pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
-      heightLeft -= pageHeight;
-      while (heightLeft > 0) {
-        position = heightLeft - imgHeight;
-        pdf.addPage();
-        pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
-        heightLeft -= pageHeight;
-      }
-      pdf.save(`納品書_${date}.pdf`);
-    };
     try {
-      // PDF化する瞬間だけプレビューの縮小表示を解除し、原寸で撮影する
-      if (previewScalerRef.current) {
-        await previewScalerRef.current.withNaturalSize(capture);
-      } else {
-        await capture();
-      }
+      await exportA4Pdf(node, `納品書_${date}.pdf`);
     } catch (e) {
       setErr("PDF保存に失敗しました: " + (e.message || e));
     } finally {
@@ -1787,7 +1853,7 @@ function InvoicePanel({ date: initialDate }) {
                 <button style={btn(true)} disabled={savingPdf} onClick={savePdfAll}>{savingPdf ? "PDF作成中..." : "PDFで保存"}</button>
               </div>
               <A4PreviewScaler ref={previewScalerRef}>
-                <div id="invoice-print-area" style={{ width: "210mm", maxWidth: "none", margin: "0 auto", background: "#fff", border: `1px solid ${T.softBorder}` }}>
+                <div id="invoice-print-area" style={{ position: "relative", width: "210mm", maxWidth: "none", margin: "0 auto", background: "#fff", border: `1px solid ${T.softBorder}` }}>
                   {printableGroups.map((g, idx) => (
                     <InvoicePreview
                       key={g.destination}
@@ -1798,7 +1864,7 @@ function InvoicePanel({ date: initialDate }) {
                       showTotals={false}
                     />
                   ))}
-                  <div style={{ padding: "0 10mm 8mm", background: "#fff", fontFamily: "system-ui, sans-serif", color: "#222" }}>
+                  <div data-pdf-block="1" style={{ padding: "0 10mm 8mm", background: "#fff", fontFamily: INVOICE_FONT, color: "#222" }}>
                     <div style={{ borderTop: "2px solid #333", paddingTop: 7.2, fontSize: 16.2 }}>
                       <div style={{ display: "flex", justifyContent: "space-between" }}><span>商品合計</span><span>{fmtYen(grandTotals.subtotal)}</span></div>
                       <div style={{ display: "flex", justifyContent: "space-between" }}><span>消費税(8%)</span><span>{fmtYen(grandTotals.tax)}</span></div>
@@ -1954,33 +2020,8 @@ function HistoryPanel() {
     if (!previewRef.current || !selectedDate) return;
     setSavingPdf(true);
     setErr("");
-    const capture = async () => {
-      const [{ default: html2canvas }, { jsPDF }] = await Promise.all([import("html2canvas"), import("jspdf")]);
-      const canvas = await html2canvas(previewRef.current, { backgroundColor: "#fff", scale: 2 });
-      const imgData = canvas.toDataURL("image/png");
-      const pdf = new jsPDF({ unit: "mm", format: "a4" });
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const pageHeight = pdf.internal.pageSize.getHeight();
-      const imgWidth = pageWidth;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      let heightLeft = imgHeight;
-      let position = 0;
-      pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
-      heightLeft -= pageHeight;
-      while (heightLeft > 0) {
-        position = heightLeft - imgHeight;
-        pdf.addPage();
-        pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
-        heightLeft -= pageHeight;
-      }
-      pdf.save(`納品書_${selectedDate}.pdf`);
-    };
     try {
-      if (previewScalerRef.current) {
-        await previewScalerRef.current.withNaturalSize(capture);
-      } else {
-        await capture();
-      }
+      await exportA4Pdf(previewRef.current, `納品書_${selectedDate}.pdf`);
     } catch (e) {
       setErr("PDF保存に失敗しました: " + (e.message || e));
     } finally {
@@ -2042,7 +2083,7 @@ function HistoryPanel() {
             ) : (
               <>
                 <A4PreviewScaler ref={previewScalerRef}>
-                  <div ref={previewRef} style={{ width: "210mm", maxWidth: "none", background: "#fff" }}>
+                  <div ref={previewRef} style={{ position: "relative", width: "210mm", maxWidth: "none", background: "#fff" }}>
                     {selectedGroups.map((g, idx) => (
                       <InvoicePreview
                         key={g.invoice.id}
@@ -2053,7 +2094,7 @@ function HistoryPanel() {
                         showTotals={false}
                       />
                     ))}
-                    <div style={{ padding: "0 10mm 8mm", background: "#fff", fontFamily: "system-ui, sans-serif", color: "#222" }}>
+                    <div data-pdf-block="1" style={{ padding: "0 10mm 8mm", background: "#fff", fontFamily: INVOICE_FONT, color: "#222" }}>
                       <div style={{ borderTop: "2px solid #333", paddingTop: 7.2, fontSize: 16.2 }}>
                         <div style={{ display: "flex", justifyContent: "space-between" }}><span>商品合計</span><span>{fmtYen(grandTotals.subtotal)}</span></div>
                         <div style={{ display: "flex", justifyContent: "space-between" }}><span>消費税(8%)</span><span>{fmtYen(grandTotals.tax)}</span></div>

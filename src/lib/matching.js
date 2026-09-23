@@ -33,6 +33,11 @@ const CERTAIN_ALIASES = [
     // 原稿側: 品目名に「活天然タイ」を含み、品目名＋規格に「SP」を含むもの
     matchManuscript: (mName, mSpec) => mName.includes('活天然タイ') && /SP/i.test(mName + mSpec),
   },
+  {
+    // kento指示（2026-09-23）: アジ → マアジ は確定でよい
+    lineNames: ['アジ', '鯵', 'あじ', 'まあじ'],
+    matchManuscript: (mName) => mName === 'マアジ',
+  },
 ];
 
 // 由良ウニの船名。LINE側・原稿側の両方に同じ船名があれば候補にする（tier 2）。
@@ -59,16 +64,76 @@ export function searchManuscriptItems(query, manuscriptItems) {
   });
 }
 
+// 規格・品目名から重さ（グラム）の範囲 [下限, 上限] を読み取る。読み取れなければnull。
+//   「850g」→[850,850]、「1.2kg」→[1200,1200]、「70g-80g」「500-700g」→範囲、「1kg〜1.5kg」→範囲
+export function parseGramsRange(text) {
+  const s = (text || '').replace(/㎏/g, 'kg').replace(/キロ/g, 'kg').replace(/ｇ/g, 'g').replace(/[０-９．]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0));
+  const toG = (v, u) => (/kg/i.test(u) ? v * 1000 : v);
+  let m = s.match(/(\d+(?:\.\d+)?)\s*(kg|g)?\s*[-~〜～]\s*(\d+(?:\.\d+)?)\s*(kg|g)/i);
+  if (m) {
+    const hiUnit = m[4];
+    const loUnit = m[2] || hiUnit;
+    const lo = toG(parseFloat(m[1]), loUnit);
+    const hi = toG(parseFloat(m[3]), hiUnit);
+    return [Math.min(lo, hi), Math.max(lo, hi)];
+  }
+  m = s.match(/(\d+(?:\.\d+)?)\s*(kg|g)(?![a-z])/i);
+  if (m) {
+    const g = toG(parseFloat(m[1]), m[2]);
+    return [g, g];
+  }
+  return null;
+}
+
+function gramsDistance(range, other) {
+  // 2つの範囲の距離（重なっていれば0）
+  if (other[1] < range[0]) return range[0] - other[1];
+  if (other[0] > range[1]) return other[0] - range[1];
+  return 0;
+}
+
+function originEq(a, b) {
+  const x = normalizeName(a);
+  const y = normalizeName(b);
+  return !!x && !!y && (x.includes(y) || y.includes(x));
+}
+
 // 「確実なもの」だけを返す（無ければnull）。LINE実績データ確定時のデフォルト紐付けに使う。
-//   確実 = 最上位候補が tier 3（品目名の完全一致）以上で、かつ同点の候補が他に無いこと。
-//   同じ品目名で産地違い・規格違いの原稿が複数あって絞り切れない場合は、確実とはみなさない。
+//   ① 候補（選択肢）が1つしかない → 確実
+//   ② 最上位候補が tier 3（品目名の完全一致）以上で、同点の候補が他に無い → 確実
+//      （tier 4 = 確実な対応表: 天然鯛系→活天然タイSP、アジ→マアジ）
+//   ③ 目方が近いもの（kento指示 2026-09-23）: 最上位と同じtierの候補のうち、産地が一致する
+//      ものだけに絞り、LINE側の目方（例: ハモ850g）に一番近い規格の原稿（例: ハモ800g）が
+//      1つに決まれば確実。産地の一致条件:
+//        - LINE側に産地がある → 原稿側の産地がそれと一致するものだけ
+//        - LINE側に産地が無い → 候補の産地が全て同じ場合のみ（産地違いが混ざるなら確定しない）
+//      絞った候補すべてから目方が読み取れない場合、または一番近いものが同着の場合は確定しない。
 export function pickCertainCandidate(lineItem, manuscriptItems) {
   const ranked = rankManuscriptCandidates(lineItem, manuscriptItems);
   if (ranked.length === 0) return null;
+  if (ranked.length === 1) return ranked[0].item;
   const top = ranked[0];
-  if (top.tier < 3) return null;
-  if (ranked.length > 1 && ranked[1].score === top.score) return null;
-  return top.item;
+  if (top.tier >= 3 && ranked[1].score !== top.score) return top.item;
+
+  const lineGrams = parseGramsRange(`${lineItem.spec || ''} ${lineItem.item_name || ''}`);
+  if (!lineGrams) return null;
+  const group = ranked.filter((c) => c.tier === top.tier);
+  let pool;
+  if (normalizeName(lineItem.origin)) {
+    pool = group.filter((c) => originEq(c.item.origin, lineItem.origin));
+  } else {
+    const origins = new Set(group.map((c) => normalizeName(c.item.origin)));
+    pool = origins.size === 1 ? group : [];
+  }
+  if (pool.length === 0) return null;
+  const measured = pool.map((c) => {
+    const r = parseGramsRange(`${c.item.spec || ''} ${c.item.item_name || ''}`);
+    return { c, d: r ? gramsDistance(lineGrams, r) : null };
+  });
+  if (measured.some((x) => x.d == null)) return null;
+  measured.sort((a, b) => a.d - b.d);
+  if (measured.length > 1 && measured[0].d === measured[1].d) return null;
+  return measured[0].c.item;
 }
 
 function hasSynonymMatch(a, b) {
