@@ -34,6 +34,12 @@ const CERTAIN_ALIASES = [
     matchManuscript: (mName, mSpec) => mName.includes('活天然タイ') && /SP/i.test(mName + mSpec),
   },
   {
+    // kento指示（2026-09-23）: マダイ・真鯛 は原稿の「活天然タイ」に該当する（規格は問わない）。
+    // 活天然タイが規格違いで複数ある場合は同点になるため、目方が近いもの等の条件で絞れた時だけ確定する。
+    lineNames: ['マダイ', '真鯛'],
+    matchManuscript: (mName) => mName.includes('活天然タイ'),
+  },
+  {
     // kento指示（2026-09-23）: アジ → マアジ は確定でよい
     lineNames: ['アジ', '鯵', 'あじ', 'まあじ'],
     matchManuscript: (mName) => mName === 'マアジ',

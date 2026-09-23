@@ -1296,6 +1296,7 @@ function LineActualPaste({ date, manuscriptItems, manuscriptItemById }) {
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12 }}>
                   <span>
                     {r.item_name}{r.spec ? `(${r.spec})` : ""}{" "}
+                    {r.actual_weight != null && r.actual_weight !== "" ? `${r.actual_weight}${r.actual_weight_unit || "kg"} ` : ""}
                     {isShippingRowName(r.item_name)
                       ? (r.purchase_price != null ? fmtYen(r.purchase_price) : "金額なし")
                       : (r.purchase_price != null ? `${fmtYen(r.purchase_price)}/${r.purchase_price_unit || "?"}` : "仕入価格なし")}
@@ -1442,6 +1443,10 @@ function buildLineItemsForInvoice(lines) {
       // そのままinvoice_line_items.sell_priceに引き継ぐ（履歴ページの利益計算にそのまま使われる。
       // 未記載ならnullのままで、従来通りHistoryPanel側の自動計算・手入力に委ねる）。
       sell_price: line.sell_price != null ? Number(line.sell_price) : null,
+      // 2026-09-23 追加（kento指示）: 納品書では備考を品目の右隣に「(備考)」で表示する。
+      // invoice_line_itemsには備考の列が無いため、保存時(saveGroup)には除外し、
+      // 履歴ページではline_actual_item_id経由でLINE実績データの備考を読み直す。
+      note: line.note || "",
       delivery_category: line.delivery_category,
       takkyu_ship_date: line.ship_date,
       takkyu_arrival_date: line.delivery_date,
@@ -1599,10 +1604,16 @@ const A4PreviewScaler = forwardRef(function A4PreviewScaler({ children }, ref) {
   );
 });
 
-function InvoicePreview({ invoiceDate, destination, lineItems, showTitle = true, showTotals = true }) {
-  const sameDay = lineItems.filter((li) => isSameDayCategory(li.delivery_category));
-  const takkyu = lineItems.filter((li) => !isSameDayCategory(li.delivery_category));
-  const totals = buildInvoiceTotals(lineItems);
+// 2026-09-23 変更（kento指示）:
+//   - 列を「品目 / 数量 / 目方 / 単価 / 金額」にする（数量の列を新設）
+//   - 備考は新しい列ではなく、品目名の右に続けて「(備考)」で表示（文字は約80%）
+//   - section="sameDay" は当日納品分だけ、section="takkyu" は宅急便分だけを表示する
+//     （宅急便は納品書全体の最後にまとめて記載するため。InvoiceDocument参照）
+function InvoicePreview({ invoiceDate, destination, lineItems, showTitle = true, showTotals = true, section, sectionHeader = null }) {
+  const sameDay = section === "takkyu" ? [] : lineItems.filter((li) => isSameDayCategory(li.delivery_category));
+  const takkyu = section === "sameDay" ? [] : lineItems.filter((li) => !isSameDayCategory(li.delivery_category));
+  const shownItems = [...sameDay, ...takkyu];
+  const totals = buildInvoiceTotals(shownItems);
 
   // 宅急便は発送日・着日の組み合わせごとにグループ化する
   const takkyuGroups = [];
@@ -1616,18 +1627,23 @@ function InvoicePreview({ invoiceDate, destination, lineItems, showTitle = true,
     g.items.push(li);
   });
 
-  // 2026-09-21 追加変更（kento指示）: 品目・目方・単価・金額を列として揃える。
-  // 品目と金額の列幅を広めに確保。
-  const ITEM_COLS = "3fr 1.2fr 1.4fr 1.6fr";
+  // 品目・数量・目方・単価・金額を列として揃える。品目の列幅を広めに確保。
+  const ITEM_COLS = "3fr 0.9fr 1.1fr 1.5fr 1.4fr";
 
   const renderLine = (li, idx) => (
     <div
       key={idx}
       style={{ display: "grid", gridTemplateColumns: ITEM_COLS, columnGap: 10, alignItems: "baseline", fontSize: 18, padding: "4px 0", borderBottom: "1px solid #ddd" }}
     >
-      <span>{li.item_name} {li.origin && `(${li.origin})`}</span>
+      <span>
+        {li.item_name} {li.origin && `(${li.origin})`}
+        {li.note ? <span style={{ fontSize: "0.8em", color: "#444" }}>({li.note})</span> : null}
+      </span>
       <span style={{ textAlign: "right" }}>
-        {li.quantity ? `${li.quantity}${li.quantity_unit || ""}` : ""}{li.weight ? ` ${li.weight}kg` : ""}
+        {li.quantity ? `${li.quantity}${li.quantity_unit || ""}` : ""}
+      </span>
+      <span style={{ textAlign: "right" }}>
+        {li.weight ? `${li.weight}kg` : ""}
       </span>
       <span style={{ textAlign: "right" }}>
         {li.unit_price ? `¥${li.unit_price.toLocaleString("ja-JP")}/${li.price_unit || ""}` : ""}
@@ -1636,11 +1652,12 @@ function InvoicePreview({ invoiceDate, destination, lineItems, showTitle = true,
     </div>
   );
 
-  const itemHeader = (sameDay.length > 0 || takkyu.length > 0) && (
+  const itemHeader = shownItems.length > 0 && (
     <div
       style={{ display: "grid", gridTemplateColumns: ITEM_COLS, columnGap: 10, fontSize: 11.7, color: "#888", borderBottom: "1px solid #ddd", paddingBottom: 4, marginTop: 4 }}
     >
       <span>品目</span>
+      <span style={{ textAlign: "right" }}>数量</span>
       <span style={{ textAlign: "right" }}>目方</span>
       <span style={{ textAlign: "right" }}>単価</span>
       <span style={{ textAlign: "right" }}>金額</span>
@@ -1653,16 +1670,15 @@ function InvoicePreview({ invoiceDate, destination, lineItems, showTitle = true,
       data-pdf-block="1"
       style={{ width: "100%", boxSizing: "border-box", background: "#fff", padding: "2.7mm 10mm", fontFamily: INVOICE_FONT, color: "#222" }}
     >
-      {showTitle ? (
+      {showTitle && (
         <div style={{ display: "flex", alignItems: "baseline", gap: 16.2, borderBottom: "2px solid #333", paddingBottom: 5.4, marginBottom: 9 }}>
           <h2 style={{ fontSize: 16.2, margin: 0 }}>納品書</h2>
           <span style={{ fontSize: 16.2, color: "#555" }}>{formatMD(invoiceDate)}（{weekdayJa(invoiceDate)}）</span>
         </div>
-      ) : (
-        <div style={{ borderTop: "1px solid #999", margin: "1.7px 0" }} />
       )}
-      {/* 2026-09-21 追加変更（kento指示）: 「宅急便」の発送/着日は別行の見出しにせず、
-          店舗名と同じ行にまとめて記載する。 */}
+      {sectionHeader}
+      {!showTitle && !sectionHeader && <div style={{ borderTop: "1px solid #999", margin: "1.7px 0" }} />}
+      {/* 「宅急便」の発送/着日は別行の見出しにせず、店舗名と同じ行にまとめて記載する。 */}
       <p style={{ fontSize: 16.2, fontWeight: 700, margin: "9px 0" }}>
         {destination} 様
         {takkyuGroups.length > 0 && (
@@ -1684,6 +1700,56 @@ function InvoicePreview({ invoiceDate, destination, lineItems, showTitle = true,
         </div>
       )}
     </div>
+  );
+}
+
+// 納品書1日分（全店舗）。当日納品の店舗を先に並べ、宅急便の分は最後にまとめて
+// 「ここから宅急便」の区切りの後に記載する（kento指示 2026-09-23）。
+// 合計（商品合計・消費税・税込合計）は従来どおり当日納品＋宅急便をまとめて1回だけ表示する。
+// groups: [{ key, destination, lineItems }]
+function InvoiceDocument({ invoiceDate, groups, grandTotals }) {
+  const sameDayGroups = groups.filter((g) => g.lineItems.some((li) => isSameDayCategory(li.delivery_category)));
+  const takkyuGroups = groups.filter((g) => g.lineItems.some((li) => !isSameDayCategory(li.delivery_category)));
+  const takkyuDivider = (
+    <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "14px 0 4px", fontSize: 14.4, fontWeight: 700, color: "#333" }}>
+      <div style={{ flex: 1, borderTop: "2px dashed #666" }} />
+      <span>ここから宅急便</span>
+      <div style={{ flex: 1, borderTop: "2px dashed #666" }} />
+    </div>
+  );
+  return (
+    <>
+      {sameDayGroups.map((g, idx) => (
+        <InvoicePreview
+          key={`s-${g.key}`}
+          invoiceDate={invoiceDate}
+          destination={g.destination}
+          lineItems={g.lineItems}
+          section="sameDay"
+          showTitle={idx === 0}
+          showTotals={false}
+        />
+      ))}
+      {takkyuGroups.map((g, idx) => (
+        <InvoicePreview
+          key={`t-${g.key}`}
+          invoiceDate={invoiceDate}
+          destination={g.destination}
+          lineItems={g.lineItems}
+          section="takkyu"
+          showTitle={sameDayGroups.length === 0 && idx === 0}
+          sectionHeader={idx === 0 ? takkyuDivider : null}
+          showTotals={false}
+        />
+      ))}
+      <div data-pdf-block="1" style={{ padding: "0 10mm 8mm", background: "#fff", fontFamily: INVOICE_FONT, color: "#222" }}>
+        <div style={{ borderTop: "2px solid #333", paddingTop: 7.2, fontSize: 16.2 }}>
+          <div style={{ display: "flex", justifyContent: "space-between" }}><span>商品合計</span><span>{fmtYen(grandTotals.subtotal)}</span></div>
+          <div style={{ display: "flex", justifyContent: "space-between" }}><span>消費税(8%)</span><span>{fmtYen(grandTotals.tax)}</span></div>
+          <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: 16.2, marginTop: 3.6 }}><span>税込合計</span><span>{fmtYen(grandTotals.total)}</span></div>
+        </div>
+      </div>
+    </>
   );
 }
 
@@ -1764,7 +1830,8 @@ function InvoicePanel({ date: initialDate }) {
       tax: totals.tax,
       total: totals.total,
     });
-    const rows = group.lineItems.map((li, idx) => ({ ...li, invoice_id: invoice.id, sort_order: idx }));
+    // eslint-disable-next-line no-unused-vars
+    const rows = group.lineItems.map(({ note, ...li }, idx) => ({ ...li, invoice_id: invoice.id, sort_order: idx }));
     await db.insertMany("invoice_line_items", rows);
     await Promise.all(group.destLines.map((l) => db.update("line_actual_items", l.id, { invoice_id: invoice.id })));
     return invoice;
@@ -1854,23 +1921,11 @@ function InvoicePanel({ date: initialDate }) {
               </div>
               <A4PreviewScaler ref={previewScalerRef}>
                 <div id="invoice-print-area" style={{ position: "relative", width: "210mm", maxWidth: "none", margin: "0 auto", background: "#fff", border: `1px solid ${T.softBorder}` }}>
-                  {printableGroups.map((g, idx) => (
-                    <InvoicePreview
-                      key={g.destination}
-                      invoiceDate={date}
-                      destination={g.destination}
-                      lineItems={g.lineItems}
-                      showTitle={idx === 0}
-                      showTotals={false}
-                    />
-                  ))}
-                  <div data-pdf-block="1" style={{ padding: "0 10mm 8mm", background: "#fff", fontFamily: INVOICE_FONT, color: "#222" }}>
-                    <div style={{ borderTop: "2px solid #333", paddingTop: 7.2, fontSize: 16.2 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between" }}><span>商品合計</span><span>{fmtYen(grandTotals.subtotal)}</span></div>
-                      <div style={{ display: "flex", justifyContent: "space-between" }}><span>消費税(8%)</span><span>{fmtYen(grandTotals.tax)}</span></div>
-                      <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: 16.2, marginTop: 3.6 }}><span>税込合計</span><span>{fmtYen(grandTotals.total)}</span></div>
-                    </div>
-                  </div>
+                  <InvoiceDocument
+                    invoiceDate={date}
+                    groups={printableGroups.map((g) => ({ key: g.destination, destination: g.destination, lineItems: g.lineItems }))}
+                    grandTotals={grandTotals}
+                  />
                 </div>
               </A4PreviewScaler>
             </section>
@@ -1949,6 +2004,17 @@ function HistoryPanel() {
       const groups = await Promise.all(
         group.invoices.map(async (inv) => {
           const items = await db.list("invoice_line_items", `?invoice_id=eq.${inv.id}&order=sort_order.asc`);
+          // 備考はLINE実績データ(line_actual_items)側から読み直す（納品書では品目の右隣に表示）
+          const lineIds = items.map((it) => it.line_actual_item_id).filter(Boolean);
+          if (lineIds.length > 0) {
+            try {
+              const lines = await db.list("line_actual_items", `?id=in.(${lineIds.join(",")})&select=id,note`);
+              const noteById = new Map(lines.map((l) => [l.id, l.note || ""]));
+              items.forEach((it) => { it.note = noteById.get(it.line_actual_item_id) || ""; });
+            } catch (e) {
+              // 備考が読めなくても納品書自体は表示する
+            }
+          }
           return { invoice: inv, items };
         })
       );
@@ -2084,23 +2150,11 @@ function HistoryPanel() {
               <>
                 <A4PreviewScaler ref={previewScalerRef}>
                   <div ref={previewRef} style={{ position: "relative", width: "210mm", maxWidth: "none", background: "#fff" }}>
-                    {selectedGroups.map((g, idx) => (
-                      <InvoicePreview
-                        key={g.invoice.id}
-                        invoiceDate={selectedDate}
-                        destination={g.invoice.destination}
-                        lineItems={g.items}
-                        showTitle={idx === 0}
-                        showTotals={false}
-                      />
-                    ))}
-                    <div data-pdf-block="1" style={{ padding: "0 10mm 8mm", background: "#fff", fontFamily: INVOICE_FONT, color: "#222" }}>
-                      <div style={{ borderTop: "2px solid #333", paddingTop: 7.2, fontSize: 16.2 }}>
-                        <div style={{ display: "flex", justifyContent: "space-between" }}><span>商品合計</span><span>{fmtYen(grandTotals.subtotal)}</span></div>
-                        <div style={{ display: "flex", justifyContent: "space-between" }}><span>消費税(8%)</span><span>{fmtYen(grandTotals.tax)}</span></div>
-                        <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: 16.2, marginTop: 3.6 }}><span>税込合計</span><span>{fmtYen(grandTotals.total)}</span></div>
-                      </div>
-                    </div>
+                    <InvoiceDocument
+                      invoiceDate={selectedDate}
+                      groups={selectedGroups.map((g) => ({ key: g.invoice.id, destination: g.invoice.destination, lineItems: g.items }))}
+                      grandTotals={grandTotals}
+                    />
                   </div>
                 </A4PreviewScaler>
                 <div style={{ marginTop: 12, textAlign: "center" }}>

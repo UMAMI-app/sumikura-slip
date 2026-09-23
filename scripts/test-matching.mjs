@@ -18,6 +18,13 @@ const certain = (name, extra = {}) => pickCertainCandidate({ item_name: name, ..
 for (const n of ['天然鯛', 'タイ', '天タイ', '鯛']) assert.equal(certain(n), 'tai-sp', n);
 // 完全一致で1件だけ → 確実
 assert.equal(certain('マアジ'), 'aji');
+// マダイ・真鯛 → 活天然タイ（規格違い2件なので候補に出るが確定はしない／1件なら確定）
+for (const n of ['マダイ', '真鯛']) {
+  const r = rankManuscriptCandidates({ item_name: n }, ms).filter((c) => c.tier === 4).map((c) => c.item.id).sort();
+  assert.deepEqual(r, ['tai-jo', 'tai-sp'], n);
+  assert.equal(certain(n), null);
+  assert.equal(pickCertainCandidate({ item_name: n }, ms.filter((x) => x.id !== 'tai-jo'))?.id, 'tai-sp');
+}
 // アジ → マアジ は確定（kento指示）
 assert.equal(certain('アジ'), 'aji');
 assert.equal(certain('鯵'), 'aji');
