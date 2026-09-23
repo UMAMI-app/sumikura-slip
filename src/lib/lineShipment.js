@@ -76,9 +76,9 @@ function isNoteLine(line) {
 //   それだけは備考に残す）
 const PROCESSING_RE = /処理|水洗い|腹出し|腹抜き|鱗とり|鱗かき|すき引き/;
 
-// 2026-09-23 追加（kento指示・7回目）: 1本まるまるではない発注を表すワード。品目名・規格・備考の
+// 2026-09-23 追加（kento指示・7〜8回目）: 1本まるまるではない発注を表すワード（片身・肩身・半身・背身・腹身・1/2・1/3・1/4・背1/4・腹1/4 等）。品目名・規格・備考の
 // どこかにあれば、数量を空欄にし、ワード自体は備考に記載する。
-const PARTIAL_RE_G = /(?:背|腹)?\s*[1１]\s*[\/／]\s*[2-9２-９]|片身|肩身|半身/g;
+const PARTIAL_RE_G = /(?:背|腹)?\s*[1１]\s*[\/／]\s*[2-9２-９]|片身|肩身|半身|背身|腹身/g;
 function findPartialWords(text) {
   return ((text || '').match(PARTIAL_RE_G) || []).map((w) => w.replace(/\s+/g, '').replace(/[１-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0)).replace('／', '/'));
 }

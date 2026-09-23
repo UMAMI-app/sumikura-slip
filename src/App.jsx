@@ -1673,18 +1673,6 @@ function InvoicePreview({ invoiceDate, destination, lineItems, showTitle = true,
   const shownItems = [...sameDay, ...takkyu];
   const totals = buildInvoiceTotals(shownItems);
 
-  // 宅急便は発送日・着日の組み合わせごとにグループ化する
-  const takkyuGroups = [];
-  takkyu.forEach((li) => {
-    const key = `${li.takkyu_ship_date || ""}__${li.takkyu_arrival_date || ""}`;
-    let g = takkyuGroups.find((x) => x.key === key);
-    if (!g) {
-      g = { key, ship: li.takkyu_ship_date, arrival: li.takkyu_arrival_date, items: [] };
-      takkyuGroups.push(g);
-    }
-    g.items.push(li);
-  });
-
   // 品目・数量・目方・単価・金額を列として揃える。品目の列幅を広めに確保。
   const ITEM_COLS = "3fr 0.9fr 1.1fr 1.5fr 1.4fr";
 
@@ -1736,14 +1724,10 @@ function InvoicePreview({ invoiceDate, destination, lineItems, showTitle = true,
       )}
       {sectionHeader}
       {!showTitle && !sectionHeader && <div style={{ borderTop: "1px solid #999", margin: "1.7px 0" }} />}
-      {/* 「宅急便」の発送/着日は別行の見出しにせず、店舗名と同じ行にまとめて記載する。 */}
+      {/* 2026-09-23 変更（kento指示）: 宅急便の発送→着日は店舗名の横には書かず、
+          InvoiceDocumentの区切り見出し（「宅急便 9/23(水)→9/24(木)」）にまとめて記載する。 */}
       <p style={{ fontSize: 16.2, fontWeight: 700, margin: "9px 0" }}>
         {destination} 様
-        {takkyuGroups.length > 0 && (
-          <span style={{ marginLeft: 14, fontWeight: 400 }}>
-            （宅急便 {takkyuGroups.map((g) => `${formatMD(g.ship)}発送→${formatMD(g.arrival)}着`).join("、")}）
-          </span>
-        )}
       </p>
 
       {itemHeader}
@@ -1767,11 +1751,38 @@ function InvoicePreview({ invoiceDate, destination, lineItems, showTitle = true,
 // groups: [{ key, destination, lineItems }]
 function InvoiceDocument({ invoiceDate, groups, grandTotals }) {
   const sameDayGroups = groups.filter((g) => g.lineItems.some((li) => isSameDayCategory(li.delivery_category)));
-  const takkyuGroups = groups.filter((g) => g.lineItems.some((li) => !isSameDayCategory(li.delivery_category)));
-  const takkyuDivider = (
+
+  // 2026-09-23 変更（kento指示）: 宅急便は「発送日→着日」の組み合わせごとに区切り、
+  // 見出しを「宅急便 9/23(水)→9/24(木)」の形にする。中1日かかる便（例: 9/23(水)→9/25(金)）
+  // などが混ざる場合は、組み合わせごとに別の区切りを立てる。店舗名の横には日付を書かない。
+  const takkyuPairs = [];
+  groups.forEach((g) => {
+    g.lineItems
+      .filter((li) => !isSameDayCategory(li.delivery_category))
+      .forEach((li) => {
+        const ship = li.takkyu_ship_date || "";
+        const arrival = li.takkyu_arrival_date || "";
+        const key = `${ship}__${arrival}`;
+        let pair = takkyuPairs.find((p) => p.key === key);
+        if (!pair) {
+          pair = { key, ship, arrival, stores: [] };
+          takkyuPairs.push(pair);
+        }
+        let store = pair.stores.find((st) => st.key === g.key);
+        if (!store) {
+          store = { key: g.key, destination: g.destination, lineItems: [] };
+          pair.stores.push(store);
+        }
+        store.lineItems.push(li);
+      });
+  });
+  takkyuPairs.sort((a, b) => (a.ship || "9999").localeCompare(b.ship || "9999") || (a.arrival || "9999").localeCompare(b.arrival || "9999"));
+
+  const fmtDay = (d) => (d ? `${formatMD(d)}(${weekdayJa(d)})` : "未定");
+  const takkyuDivider = (pair) => (
     <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "14px 0 4px", fontSize: 14.4, fontWeight: 700, color: "#333" }}>
       <div style={{ flex: 1, borderTop: "2px dashed #666" }} />
-      <span>ここから宅急便</span>
+      <span>宅急便 {fmtDay(pair.ship)}→{fmtDay(pair.arrival)}</span>
       <div style={{ flex: 1, borderTop: "2px dashed #666" }} />
     </div>
   );
@@ -1788,18 +1799,20 @@ function InvoiceDocument({ invoiceDate, groups, grandTotals }) {
           showTotals={false}
         />
       ))}
-      {takkyuGroups.map((g, idx) => (
-        <InvoicePreview
-          key={`t-${g.key}`}
-          invoiceDate={invoiceDate}
-          destination={g.destination}
-          lineItems={g.lineItems}
-          section="takkyu"
-          showTitle={sameDayGroups.length === 0 && idx === 0}
-          sectionHeader={idx === 0 ? takkyuDivider : null}
-          showTotals={false}
-        />
-      ))}
+      {takkyuPairs.map((pair, pi) =>
+        pair.stores.map((st, si) => (
+          <InvoicePreview
+            key={`t-${pair.key}-${st.key}`}
+            invoiceDate={invoiceDate}
+            destination={st.destination}
+            lineItems={st.lineItems}
+            section="takkyu"
+            showTitle={sameDayGroups.length === 0 && pi === 0 && si === 0}
+            sectionHeader={si === 0 ? takkyuDivider(pair) : null}
+            showTotals={false}
+          />
+        ))
+      )}
       <div data-pdf-block="1" style={{ padding: "0 10mm 8mm", background: "#fff", fontFamily: INVOICE_FONT, color: "#222" }}>
         <div style={{ borderTop: "2px solid #333", paddingTop: 7.2, fontSize: 16.2 }}>
           <div style={{ display: "flex", justifyContent: "space-between" }}><span>商品合計</span><span>{fmtYen(grandTotals.subtotal)}</span></div>

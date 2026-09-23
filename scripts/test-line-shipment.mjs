@@ -316,3 +316,11 @@ console.log('OK: line shipment parser correctly skips store/orderer/request-note
   ]);
   console.log('OK: 配送元ワードは直前の品目の備考／処理系は削除／部位発注は数量空欄＋備考／サイズ表記は削除');
 }
+
+// 2026-09-23 追加（kento指示・8回目）: 背身・腹身・1/3 も部位発注として扱う
+{
+  const raw = '👤\n後藤聖和\n角倉商店\n→\n楽\n🚚 発送\n9/19\n📦 納品\n9/19午前中\n配達🚛\nブリ 背身\n1.2kg\n仕入 ¥2,000\nブリ 腹身\n1.1kg\n仕入 ¥2,000\nマグロ 1/3\n3.2kg\n仕入 ¥5,000\n';
+  const rows = buildLineActualRows(parseLineShipmentText(raw, '2026-09-19').destinations, '2026-09-19', {});
+  assert.deepEqual(rows.map((r) => [r.item_name, r.quantity, r.note]), [['ブリ', null, '背身'], ['ブリ', null, '腹身'], ['マグロ', null, '1/3']]);
+  console.log('OK: 背身・腹身・1/3 も数量空欄＋備考');
+}
