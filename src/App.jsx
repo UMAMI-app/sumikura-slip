@@ -78,7 +78,10 @@ const BLANK_NEW_LINE = {
 
 export default function App() {
   const [tab, setTab] = useState("orders");
-  const [selectedDate] = useState(todayStr()); // 発注一覧・原稿読込・納品書作成は常に「今日」を対象にする（過去の振り返りは納品書履歴で行う）
+  // 2026-09-23 変更（kento指示）: 過去の納品書を作ることがあるため、「原稿」「発注」「チェック」
+  // 「納品書」の各ページにカレンダーを置く（デフォルトは当日）。4ページとも同じ日付を共有し、
+  // どのページでカレンダーを変えても他のページの日付も同じになる。
+  const [selectedDate, setSelectedDate] = useState(todayStr());
   const [manuscriptBatches, setManuscriptBatches] = useState([]);
   const [manuscriptItems, setManuscriptItems] = useState([]);
   const [orderLines, setOrderLines] = useState([]);
@@ -167,6 +170,7 @@ export default function App() {
         {tab === "manuscript" && (
           <ManuscriptPanel
             date={selectedDate}
+            onDateChange={setSelectedDate}
             items={manuscriptItems}
             loading={loading}
             onSaved={() => reloadAll(selectedDate)}
@@ -175,6 +179,7 @@ export default function App() {
         {tab === "orders" && (
           <OrdersPanel
             date={selectedDate}
+            onDateChange={setSelectedDate}
             orderLines={orderLines}
             onChanged={() => loadOrderLines(selectedDate).catch((e) => setGlobalError(e.message || String(e)))}
           />
@@ -182,12 +187,13 @@ export default function App() {
         {tab === "pricecheck" && (
           <PriceCheckPanel
             date={selectedDate}
+            onDateChange={setSelectedDate}
             manuscriptItems={manuscriptItems}
             manuscriptItemById={manuscriptItemById}
           />
         )}
         {tab === "invoice" && (
-          <InvoicePanel date={selectedDate} manuscriptItemById={manuscriptItemById} />
+          <InvoicePanel date={selectedDate} onDateChange={setSelectedDate} manuscriptItemById={manuscriptItemById} />
         )}
         {tab === "history" && <HistoryPanel />}
       </main>
@@ -217,7 +223,7 @@ function tabBtnStyle(active) {
 }
 
 /* ============================= 原稿読み込み ============================= */
-function ManuscriptPanel({ date, items, loading, onSaved }) {
+function ManuscriptPanel({ date, onDateChange, items, loading, onSaved }) {
   const [pasteText, setPasteText] = useState("");
   const [preview, setPreview] = useState(null); // { items, skippedLines }
   const [saving, setSaving] = useState(false);
@@ -288,6 +294,7 @@ function ManuscriptPanel({ date, items, loading, onSaved }) {
 
   return (
     <div>
+      <DateHeader title="原稿読み込み" date={date} onDateChange={onDateChange} />
       <section style={card()}>
         <h3 style={h3()}>原稿テキストを貼り付け</h3>
         <textarea
@@ -405,6 +412,28 @@ function h2() {
 function h3() {
   return { fontSize: 14, color: T.green, marginTop: 0 };
 }
+// ページ見出し＋カレンダー（原稿・発注・チェック・納品書で共通。日付は全ページで共有）
+function DateHeader({ title, date, onDateChange, children }) {
+  const today = todayStr();
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
+      <h2 style={{ ...h2(), marginBottom: 0 }}>{title}</h2>
+      <input
+        type="date"
+        style={{ ...inputStyle(), ...(date !== today ? { borderColor: T.warn, color: T.warn } : {}) }}
+        value={date}
+        onChange={(e) => { if (e.target.value && onDateChange) onDateChange(e.target.value); }}
+      />
+      {date !== today && onDateChange && (
+        <button style={{ ...btn(false), padding: "4px 10px", fontSize: 12 }} onClick={() => onDateChange(today)}>
+          今日に戻す
+        </button>
+      )}
+      {children}
+    </div>
+  );
+}
+
 function card() {
   return { background: T.panel, border: `1px solid ${T.softBorder}`, borderRadius: 10, padding: 14, marginBottom: 16 };
 }
@@ -482,7 +511,7 @@ function QtyInput({ line, patchLocal, saveField, fontSize, width }) {
 }
 
 /* ============================= 発注一覧 ============================= */
-function OrdersPanel({ date, orderLines, onChanged }) {
+function OrdersPanel({ date, onDateChange, orderLines, onChanged }) {
   const [localLines, setLocalLines] = useState(orderLines);
   const [showAddForm, setShowAddForm] = useState(false);
   const [newLine, setNewLine] = useState(BLANK_NEW_LINE);
@@ -790,7 +819,7 @@ function OrdersPanel({ date, orderLines, onChanged }) {
 
   return (
     <div>
-      <h2 style={h2()}>発注一覧（{date}）</h2>
+      <DateHeader title="発注一覧" date={date} onDateChange={onDateChange} />
       {err && <div style={{ color: T.warn, marginBottom: 12 }}>{err}</div>}
 
       <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
@@ -912,10 +941,10 @@ function OrdersPanel({ date, orderLines, onChanged }) {
 // (①LINE実績データ)側への原稿紐付け・単価チェックに一本化したため廃止した
 // （kento指示: 2026-09-21）。中身は LineActualPaste 内のManuscriptLinkSelect/
 // ManuscriptCompareBadgeを参照。
-function PriceCheckPanel({ date, manuscriptItems, manuscriptItemById }) {
+function PriceCheckPanel({ date, onDateChange, manuscriptItems, manuscriptItemById }) {
   return (
     <div>
-      <h2 style={h2()}>価格チェック（{date}）</h2>
+      <DateHeader title="価格チェック" date={date} onDateChange={onDateChange} />
       <LineActualPaste date={date} manuscriptItems={manuscriptItems} manuscriptItemById={manuscriptItemById} />
     </div>
   );
@@ -1834,11 +1863,11 @@ function InvoiceDocument({ invoiceDate, groups, grandTotals }) {
 // まとめて（店舗ごとにわかりやすく区切って）1つのA4印刷用プレビューに表示する。
 // 保存自体は従来どおりinvoices/invoice_line_itemsに店舗ごとに1件ずつ作る
 // （HistoryPanelが店舗単位の閲覧を前提にしているため、データモデルは変更しない）。
-function InvoicePanel({ date: initialDate }) {
+function InvoicePanel({ date, onDateChange }) {
   // 2026-09-21 追加変更（kento指示）: 前日など当日以外の納品書も作れるように、
   // タイトル横のカレンダーで対象日を選べるようにする（デフォルトは当日）。
   // 選んだ日付がLINE実績の読み込み・保存・PDFファイル名すべてに反映される。
-  const [date, setDate] = useState(initialDate);
+  // 日付は原稿・発注・チェックと共有（App側のselectedDate）
   const [items, setItems] = useState([]);
   const [loadingItems, setLoadingItems] = useState(false);
   const [loadErr, setLoadErr] = useState("");
@@ -1965,9 +1994,7 @@ function InvoicePanel({ date: initialDate }) {
 
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
-        <h2 style={{ ...h2(), marginBottom: 0 }}>納品書作成</h2>
-        <input type="date" style={inputStyle()} value={date} onChange={(e) => setDate(e.target.value)} />
+      <DateHeader title="納品書作成" date={date} onDateChange={onDateChange}>
         <button
           style={{
             ...btn(true),
@@ -1978,7 +2005,7 @@ function InvoicePanel({ date: initialDate }) {
         >
           {savingAll ? "保存中..." : "保存"}
         </button>
-      </div>
+      </DateHeader>
       {loadErr && <div style={{ color: T.warn, marginBottom: 12 }}>{loadErr}</div>}
       {err && <div style={{ color: T.warn, marginBottom: 12 }}>{err}</div>}
       {loadingItems && <p style={{ fontSize: 13, color: T.textSub }}>読み込み中...</p>}
@@ -2260,7 +2287,7 @@ function HistoryPanel() {
 
                 {/* 2026-09-21 追加（kento指示）: 選択した日付の利益。
                     仕入れ値＝納品書明細の金額(amount)。売値は明細ごとに入力・保存でき、
-                    未入力なら仕入れ値から自動計算（1万円以上は1.1倍、1万円未満は1.15倍、税抜）。 */}
+                    未入力なら仕入単価×1.15（単価1万円以上は1.1）を100円単位に切り上げた売値単価×目方/数量で自動計算（税抜）。 */}
                 <div style={{ marginTop: 20 }}>
                   <h3 style={h3()}>利益（{selectedDate}）</h3>
                   <div style={{ marginBottom: 10, fontSize: 13, color: T.textSub }}>

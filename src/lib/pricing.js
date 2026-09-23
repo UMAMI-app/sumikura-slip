@@ -72,20 +72,41 @@ export const DELIVERY_CATEGORY_LABELS = {
 
 // 利益計算（2026-09-21 追加, kento指示）。
 // 納品書明細の金額(amount)がそのまま仕入れ値。売値を明細ごとに入力・保存できるようにし
-// （invoice_line_items.sell_price）、入力済みならその金額を使う。未入力なら仕入れ値から
-// 自動計算する: 1万円以上は1.1倍、1万円未満は1.15倍（消費税は考慮しない＝税抜のまま計算）、
-// 十の位を切り上げて100円単位にする。
+// （invoice_line_items.sell_price）、入力済みならその金額を使う。
+//
+// 2026-09-23 変更（kento指示）: 未入力時の自動計算は「単価」に掛け率を掛ける方式にする。
+//   売値単価 = 仕入単価 × 1.15（単価1万円未満）／× 1.1（単価1万円以上）を、十の位で切り上げて100円単位
+//     例: 仕入 k4,200 → 4,200×1.15=4,830 → 売値単価 k4,900
+//   行の売値 = 売値単価 × 目方（kg単価の場合）／× 数量（本・枚などの単価の場合）
+//   単価や目方・数量が無くて計算できない行だけ、従来どおり行の金額(amount)に掛け率を掛けて
+//   100円単位に切り上げる。消費税は考慮しない（税抜）。
+export function sellRateFor(price) {
+  return price >= 10000 ? 1.1 : 1.15;
+}
+
+export function ceilTo100(n) {
+  // 浮動小数の誤差（4000×1.1=4400.0000000000005 等）で1つ上に切り上がらないよう、先に小数第2位で丸める
+  const raw = Math.round(n * 100) / 100;
+  return Math.ceil(raw / 100) * 100;
+}
+
+export function computeSellUnitPrice(unitPrice) {
+  const p = Number(unitPrice);
+  if (!(p > 0)) return null;
+  return ceilTo100(p * sellRateFor(p));
+}
+
 export function computeSellPrice(item) {
-  const cost = item.amount || 0;
   if (item.sell_price != null && item.sell_price !== '') {
     return Math.round(Number(item.sell_price));
   }
-  const rate = cost >= 10000 ? 1.1 : 1.15;
-  // 2026-09-23 変更（kento指示）: 自動計算した売値は十の位を切り上げて100円単位にする
-  // （例: 4,200×1.15=4,830 → 4,900）。浮動小数の誤差（4000×1.1=4400.0000000000005 等）で
-  // 1つ上に切り上がらないよう、先に小数第2位で丸めてから切り上げる。
-  const raw = Math.round(cost * rate * 100) / 100;
-  return Math.ceil(raw / 100) * 100;
+  const sellUnit = computeSellUnitPrice(item.unit_price);
+  if (sellUnit != null) {
+    const basis = item.price_unit === 'kg' ? Number(item.weight) : Number(item.quantity);
+    if (basis > 0) return Math.round(sellUnit * basis);
+  }
+  const cost = item.amount || 0;
+  return ceilTo100(cost * sellRateFor(cost));
 }
 
 export function buildProfitTotals(lineItems) {

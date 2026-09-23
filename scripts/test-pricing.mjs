@@ -43,4 +43,13 @@ assert.equal(profit.cost, 15000);
 assert.equal(profit.sell, 16800); // 11000 + 5800（5750を十の位切り上げ）
 assert.equal(profit.profit, 1800);
 
+// 2026-09-23: 単価ベースの自動売値（kento指示）
+import('../src/lib/pricing.js').then(({ computeSellUnitPrice }) => {
+  assert.equal(computeSellUnitPrice(4200), 4900); // k4,200×1.15=4,830 → 4,900
+  assert.equal(computeSellUnitPrice(12000), 13200); // 1万円以上は1.1倍
+  assert.equal(computeSellUnitPrice(9990), 11500); // 9,990×1.15=11,488.5 → 11,500
+});
+assert.equal(computeSellPrice({ amount: 4830, unit_price: 4200, price_unit: 'kg', weight: 1.15 }), 5635); // 4,900×1.15kg
+assert.equal(computeSellPrice({ amount: 29600, unit_price: 14800, price_unit: '枚', quantity: 2 }), 32600); // 14,800×1.1=16,280→16,300 ×2枚
+assert.equal(computeSellPrice({ amount: 5000, unit_price: 5000, price_unit: 'kg', weight: null }), 5800); // 目方なし→行金額で計算
 console.log('OK: pricing/tax logic matches spec test cases (4,5,6,7,8,9)');
