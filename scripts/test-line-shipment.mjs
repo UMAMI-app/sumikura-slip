@@ -170,3 +170,81 @@ console.log('OK: line shipment parser correctly skips store/orderer/request-note
   assert.equal(hamo.note, '肩身'); // 送料の手前にある本当の備考は従来通り拾う
   console.log('OK: 送料 is never registered as an item and never leaks into any note text');
 }
+
+// 2026-09-25 追加（kento指示・5回目）: 「備考に巻き込まれて品目が備考に入ってしまってるわ」の
+// 回帰テスト。「仕入／売値の直後の1行は備考」という位置ベースの判定だけでは、本当は次の品目名
+// である行（メヒカリ銚子(40g)・鯵・生食かき・ハマグリ・赤ムツ等）まで備考に吸われてしまって
+// いた。次の行が実重量／仕入・売値／数量のような「品目継続データ」らしければ、今見ている行は
+// 備考ではなく新しい品目名だったと判断する先読みロジックの確認（実際に報告された4パターンを
+// それぞれ再現する）。
+{
+  // 嘉多妻: 仕入の直後に「売値」が来て、さらにその直後に本当は新しい品目（メヒカリ銚子）が
+  // 続くケース。旧ロジックでは売値が備考を再度アーム(rearm)し、メヒカリ銚子まで備考に
+  // 巻き込まれていた。
+  const raw = `👤\n \n浦島一樹\n未確定\n角倉商店\n→\n嘉多妻\n🚚 発送\n9/25\n📦 納品\n9/25午前中\n配達🚛\nサワラ半身\n1.8 ㎏\n仕入 ¥3,200\n売値 ¥4,500\nメヒカリ銚子(40g)\n0.3 ㎏\n仕入 ¥1,200\n送料\n1\n`;
+  const { destinations, warnings } = parseLineShipmentText(raw, '2026-09-25');
+  assert.equal(warnings.length, 0);
+  const kataduma = destinations[0];
+  assert.deepEqual(kataduma.items.map((it) => it.item_name), ['サワラ半身', 'メヒカリ銚子']); // メヒカリ銚子が備考に巻き込まれない
+  const sawara = kataduma.items.find((it) => it.item_name === 'サワラ半身');
+  assert.equal(sawara.note, ''); // 売値の内容はテキストの備考ではなく、下のsell_priceで確認する
+  assert.equal(sawara.sell_price, 4500); // 「売値記載あるものは反応してほしい」: 数値として保持する
+  const mehikari = kataduma.items.find((it) => it.item_name === 'メヒカリ銚子');
+  assert.deepEqual({ spec: mehikari.spec, weight: mehikari.actual_weight, price: mehikari.purchase_price }, { spec: '40g', weight: 0.3, price: 1200 });
+  console.log('OK: 仕入→売値のすぐ後に続く本当の次の品目（メヒカリ銚子）が備考に巻き込まれない（嘉多妻ブロック再現）');
+}
+{
+  // お料理宮本: 仕入の直後、備考を挟まずそのまま次の品目（鯵）が続くケース。
+  const raw = `👤\n \n後藤聖和\n未確定\n角倉商店\n→\nお料理宮本\n🚚 発送\n9/25\n📦 納品\n9/25午前中\n航空便✈️\n淡路ハモ\n1.5 ㎏\n仕入 ¥3,800\n鯵\n0.6 ㎏\n仕入 ¥1,900\n送料\n1\n`;
+  const { destinations, warnings } = parseLineShipmentText(raw, '2026-09-25');
+  assert.equal(warnings.length, 0);
+  assert.deepEqual(destinations[0].items.map((it) => it.item_name), ['淡路ハモ', '鯵']); // 鯵が備考に巻き込まれない
+  const hamo = destinations[0].items.find((it) => it.item_name === '淡路ハモ');
+  assert.equal(hamo.note, '');
+  console.log('OK: 仕入のすぐ後に続く本当の次の品目（鯵）が備考に巻き込まれない（お料理宮本ブロック再現）');
+}
+{
+  // 白林荘: 仕入の直後に品目が2連続で続くケース（サンマ→生食かき→ハマグリ）。
+  const raw = `👤\n \n見富剛\n未確定\n角倉商店\n→\n白林荘（神田陽介）\n🚚 発送\n9/25\n📦 納品\n9/25午前中\n配達🚛\nサンマ\n0.4 ㎏\n仕入 ¥900\n生食かき\n1.0 ㎏\n仕入 ¥2,600\nハマグリ\n0.8 ㎏\n仕入 ¥1,500\n送料\n1\n`;
+  const { destinations, warnings } = parseLineShipmentText(raw, '2026-09-25');
+  assert.equal(warnings.length, 0);
+  assert.deepEqual(destinations[0].items.map((it) => it.item_name), ['サンマ', '生食かき', 'ハマグリ']); // 2連続とも備考に巻き込まれない
+  destinations[0].items.forEach((it) => assert.equal(it.note, ''));
+  console.log('OK: 仕入のすぐ後に品目が2連続で続いても両方とも備考に巻き込まれない（白林荘ブロック再現）');
+}
+{
+  // 鮨陸: 由良ウニ（うに＝枚単価の既知パターン）の直後に本当の次の品目（赤ムツ）が続くケース。
+  const raw = `👤\n \n奥秋勝也\n未確定\n角倉商店\n→\n鮨陸\n🚚 発送\n9/25\n📦 納品\n9/25午前中\n配達🚛\n由良ウニ\n仕入 ¥7,500\n赤ムツ(600g)\n1.1 ㎏\n仕入 ¥5,200\n送料\n1\n`;
+  const { destinations, warnings } = parseLineShipmentText(raw, '2026-09-25');
+  assert.equal(warnings.length, 0);
+  assert.deepEqual(destinations[0].items.map((it) => it.item_name), ['由良ウニ', '赤ムツ']); // 赤ムツが備考に巻き込まれない
+  const yuraUni = destinations[0].items.find((it) => it.item_name === '由良ウニ');
+  assert.equal(yuraUni.note, '');
+  console.log('OK: 由良ウニの直後に続く本当の次の品目（赤ムツ）が備考に巻き込まれない（鮨陸ブロック再現）');
+}
+
+// 2026-09-25 追加（kento指示・5回目）: 「送料別！」のような、送料についての自由記述の備考
+// （送料マーカー行そのものではない）が、誤って送料マーカーとして食べられて情報が失われないこと
+// の確認。SHIPPING_FEE_LINE_RE は「送料」＋任意のカッコ書きのみに厳密化してあるため、
+// 「送料別！」は通常の備考判定に流れて拾われる。
+{
+  const raw = `👤\n \n岡本研人\n未確定\n角倉商店\n→\n楽只\n🚚 発送\n9/25\n📦 納品\n9/25午前中\n配達🚛\nスズキ\n1.4 ㎏\n仕入 ¥3,100\n送料別！\n`;
+  const { destinations, warnings } = parseLineShipmentText(raw, '2026-09-25');
+  assert.equal(warnings.length, 0);
+  assert.deepEqual(destinations[0].items.map((it) => it.item_name), ['スズキ']); // 新しい品目として誤登録されない
+  assert.equal(destinations[0].items[0].note, '送料別！'); // 送料マーカーとして食べられず、備考として保持される
+  console.log('OK: 「送料別！」のような送料についての自由記述の備考は、送料マーカーとして食べられず備考として保持される');
+}
+
+// 2026-09-25 追加（kento指示・5回目）: 「送料(箱代含む)」のように送料マーカー行の後に、
+// その送料自体の数量行だけでなく価格行（仕入 ¥○○）まで続くケースで、直前の実品目の
+// purchase_priceが上書きされてしまわないことの確認（白林荘・鮨陸ブロックで発見）。
+{
+  const raw = `👤\n \n見富剛\n未確定\n角倉商店\n→\n鮨陸\n🚚 発送\n9/25\n📦 納品\n9/25午前中\n配達🚛\n赤ムツ(600g)\n1.1 ㎏\n仕入 ¥5,200\n送料(箱代含む)\n1\n仕入 ¥2,200\n`;
+  const { destinations, warnings } = parseLineShipmentText(raw, '2026-09-25');
+  assert.equal(warnings.length, 0);
+  assert.deepEqual(destinations[0].items.map((it) => it.item_name), ['赤ムツ']); // 品目は1件のみ（送料は品目化されない）
+  const akamutsu = destinations[0].items.find((it) => it.item_name === '赤ムツ');
+  assert.equal(akamutsu.purchase_price, 5200); // 送料の「仕入 ¥2,200」に上書きされていないこと
+  console.log('OK: 送料マーカー行の後に続く価格行（仕入 ¥○○）も読み飛ばされ、直前の実品目のpurchase_priceを上書きしない');
+}

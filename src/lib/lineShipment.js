@@ -54,11 +54,32 @@ const CATEGORY_MAP = [
 // します」「肩身(骨なし)」「今回個人伝票になります。金額分かり次第教えてください！！」のような
 // 定型キーワードに含まれない自由記述の要望を拾いきれなかった（別途、行の「位置」でも判定する
 // ロジックを追加。isNoteLineは今でもキーワード一致の判定として使っている）。
+//
+// 2026-09-25 追加変更（kento指示・5回目）: 「仕入／売値の直後の1行は備考」という位置ベースの
+// ルールだけでは、実際には備考が無くそのまま次の品目名が続くケース（例:「メヒカリ銚子(40g)」
+// 「鯵」「生食かき」「ハマグリ」「赤ムツ」等が備考に巻き込まれてしまった）を誤判定してしまう
+// ことが実データで見つかった。対策として、位置ベースのみで備考と判定しようとしている行に限り
+// 「その次の行」を先読みし、実重量・仕入／売値・数量(+単位)のような「品目に続くデータ」らしい
+// 行が来ている場合は、今見ている行こそが新しい品目名だったと判断して備考にはしない
+// （looksLikeItemContinuationLine）。⚠️マークやNOTE_KEYWORDSに明示的に一致した行は、この先読みに
+// 関わらず常に備考として扱う（キーワード一致のほうが位置ベースの推測より確実なため）。
 const NOTE_KEYWORDS = [
   '水洗い', '腹出し', '腹抜き', '鱗とり', '鱗かき', 'すき引き', '内臓処理', '処理なし',
 ];
 function isNoteLine(line) {
   return line.includes('⚠️') || NOTE_KEYWORDS.some((k) => line.includes(k));
+}
+
+// 実重量／仕入・売値／数量(+単位)／規格×数量 など、「品目名の直後に続くデータ」らしい行かどうか。
+// 備考の先読み判定専用（本来の各解析ロジックとは正規表現を共有せず、判定目的だけに使う）。
+function looksLikeItemContinuationLine(line) {
+  if (!line) return false;
+  if (/^(\d+(?:\.\d+)?)\s*(㎏|kg)\s*$/i.test(line)) return true; // 実重量
+  if (/^(㎏|kg)\s*$/i.test(line)) return true; // 実重量（未入力）
+  if (/^(仕入|売値)\s*[¥￥]/.test(line)) return true; // 仕入／売値の価格行
+  if (/^(\d+(?:\.\d+)?)\s*(本|尾|杯|枚|個|箱|束|ケ|ヶ|パック|腹|匹|pc)\s*$/i.test(line)) return true; // 数量+単位
+  if (/^.+?\s*[×x]\s*(\d+(?:\.\d+)?)\s*(本|尾|杯|枚|個|箱|束|ケ|ヶ|パック|腹|匹|pc)\s*$/i.test(line)) return true; // 規格×数量
+  return false;
 }
 
 // 2026-09-23 追加変更（kento指示）: 「👤」ブロックの見出し部分（発注者名・ステータス・発注元）を
@@ -129,6 +150,21 @@ function parseItemNameLine(rawLine) {
   return { item_name: s.trim(), origin, spec, quantity, quantity_unit };
 }
 
+// 「送料」の見出し行。カッコ書きの補足（例:「送料(箱代含む)」）は許すが、それ以外の自由文
+// （例:「送料別！」のような、送料についての備考コメント）を誤って送料マーカーとして食べて
+// しまわないよう、厳密に「送料」＋任意のカッコ書きのみに限定する（2026-09-25 実データレビューで
+// 発見。ユーザーからの直接指示ではないが、既存の「送料は品目にしないが情報は失わない」方針に
+// 沿った補強。「送料別！」のような自由文は下の通常の備考判定に流れて拾われる）。
+const SHIPPING_FEE_LINE_RE = /^送料(?:[（(][^)）]*[)）])?\s*$/;
+// 送料マーカー行の後に、その送料自体の数量行（例:「1」）や価格行（例:「仕入 ¥2,200」）が
+// 続くことがある。どちらも品目には一切反映せず読み飛ばす対象なので、まとめて判定する
+// （2026-09-25 追加変更・実データレビューで発見。「送料(箱代含む)」→「1」→「仕入 ¥2,200」の
+// ように価格行まで続くケースで、直前の実品目のpurchase_priceを巻き込んで上書きしてしまう
+// 問題への対応）。
+function isShippingFeeContinuationLine(line) {
+  return /^(\d+(?:\.\d+)?)$/.test(line) || /^(仕入|売値)\s*[¥￥]/.test(line);
+}
+
 // rawText: LINEからコピーした出荷実績データの生テキスト（複数件貼り付け可）
 // referenceDateStr: アプリで選択されている日付('YYYY-MM-DD')。M/D表記の年を補うのに使う。
 export function parseLineShipmentText(rawText, referenceDateStr) {
@@ -153,9 +189,9 @@ export function parseLineShipmentText(rawText, referenceDateStr) {
     // 2026-09-23 追加変更（kento指示・2回目）: 「仕入／売値」の行を読んだ直後だけtrueにする
     // フラグ。「仕入／売値の次に来る1行は備考」という位置ベースのルールをこれで実現する。
     awaitingPostPriceLine: false,
-    // 2026-09-24 追加変更（kento指示・4回目）: 「送料」の行を読んだ直後だけtrueにする
-    // フラグ。送料の次に来る数量だけの行（例:「1」）を、品目には一切反映せず読み飛ばすために使う。
-    awaitingShippingFeeQuantity: false,
+    // 2026-09-25 追加変更（kento指示・5回目）: 「送料」の直後に続く、送料自体の数量行・価格行を
+    // 読み飛ばすためのカウンタ（最大2行分＝数量行＋価格行）。品目には一切反映しない。
+    shippingFeeLinesToConsume: 0,
     shipDate: null,
     deliveryDate: null,
     deliveryNote: '',
@@ -174,7 +210,10 @@ export function parseLineShipmentText(rawText, referenceDateStr) {
     lastItem = null;
   };
 
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const nextLine = lines[i + 1];
+
     if (line === '👤') {
       flushDest();
       dest = newDest();
@@ -223,6 +262,23 @@ export function parseLineShipmentText(rawText, referenceDateStr) {
       continue;
     }
 
+    // 2026-09-25 追加変更（kento指示・5回目）: 「送料」マーカー行そのもの、および
+    // それに続く数量行・価格行（最大2行）はここで最優先に読み飛ばす（品目には一切反映しない・
+    // 「仕入」「売値」の判定より必ず先に行い、直前の実品目のpurchase_priceを巻き込んで
+    // 上書きしてしまわないようにする）。
+    if (SHIPPING_FEE_LINE_RE.test(line)) {
+      dest.awaitingPostPriceLine = false;
+      dest.shippingFeeLinesToConsume = 2;
+      continue;
+    }
+    if (dest.shippingFeeLinesToConsume > 0) {
+      if (isShippingFeeContinuationLine(line)) {
+        dest.shippingFeeLinesToConsume--;
+        continue;
+      }
+      dest.shippingFeeLinesToConsume = 0; // 送料に関係ない行が来たので通常の判定に戻す
+    }
+
     // 「仕入 ¥13,000」「仕入 ¥13,000/kg」
     if ((m = line.match(/^仕入\s*[¥￥]\s*([\d,]+)(?:\s*\/\s*(\S+))?\s*$/))) {
       if (lastItem) {
@@ -234,11 +290,14 @@ export function parseLineShipmentText(rawText, referenceDateStr) {
       }
       continue;
     }
-    // 「売値 ¥5,200」: LINE実績データ側には基本的に登場しない想定だが、貼り付けられた場合に
-    // 新しい品目として誤認識されないよう、備考として保持するだけにする（納品書には使わない）。
+    // 「売値 ¥5,200」: 2026-09-25 追加変更（kento指示・5回目）「売値記載あるものは反応して
+    // ほしい」に対応し、これまでのように備考テキストへ埋め込むのではなく、lastItem.sell_priceに
+    // 数値として保持する（line_actual_items.sell_price → 納品書明細(invoice_line_items.sell_price)
+    // まで引き継がれ、履歴画面の利益計算にそのまま使われる。手入力・自動計算のデフォルト値は
+    // 従来どおり空欄の場合のみ使われる）。
     if ((m = line.match(/^売値\s*[¥￥]\s*([\d,]+)\s*$/))) {
       if (lastItem) {
-        lastItem.note = lastItem.note ? `${lastItem.note} / ${line}` : line;
+        lastItem.sell_price = parseFloat(m[1].replace(/,/g, ''));
         dest.awaitingPostPriceLine = true; // 仕入と同様、次の1行は原則として備考
       } else {
         warnings.push(`「${line}」の対象の品目が見つかりませんでした`);
@@ -259,19 +318,6 @@ export function parseLineShipmentText(rawText, referenceDateStr) {
     if (/^(㎏|kg)\s*$/i.test(line)) {
       if (!lastItem) warnings.push(`「${line}」の対象の品目が見つかりませんでした`);
       continue;
-    }
-    // 2026-09-24 追加変更（kento指示・4回目）: 「送料」は品目として一切認識しない（items配列に
-    // 追加しない・備考にも入れない）。直後に来る数量だけの行（例:「1」）も送料の分なので、
-    // lastItem（＝送料より前の最後の実品目）には反映せずそのまま読み飛ばす。
-    if (/^送料/.test(line)) {
-      dest.awaitingPostPriceLine = false;
-      dest.awaitingShippingFeeQuantity = true;
-      continue;
-    }
-    if (dest.awaitingShippingFeeQuantity) {
-      dest.awaitingShippingFeeQuantity = false;
-      if (/^(\d+(?:\.\d+)?)$/.test(line)) { continue; } // 送料の数量行なので読み飛ばす
-      // 数字でなければ送料の数量行ではないため、下の通常の判定に流す。
     }
     // 2026-09-24 追加変更（kento指示・3回目）: 「弘茂丸」は配送を担当する船（配送業者）の名前。
     // ブロックのどこに出てきても新しい品目にはせず、そのブロックでこれまでに確定している
@@ -335,25 +381,38 @@ export function parseLineShipmentText(rawText, referenceDateStr) {
     // 「肩身(骨なし)」「今回個人伝票になります。金額分かり次第教えてください！！」等、
     // 定型キーワードではない自由記述の備考も同様に拾う）。「送料」は上のチェックで既に
     // 専用処理されているため、ここでの特別扱いは不要になった（2026-09-24 kento指示）。
+    //
+    // 2026-09-25 追加変更（kento指示・5回目）: ただし、この判定が⚠️／NOTE_KEYWORDSの
+    // 明示的な一致ではなく「位置（仕入／売値の直後）」だけによるものである場合に限り、
+    // 「次の行」を先読みして実重量／仕入・売値／数量のような品目継続データらしい行が
+    // 来ていれば、今見ている行こそが新しい品目名だったと判断し備考にはしない
+    // （＝下の品目作成ロジックに処理を委ねる）。実データで「メヒカリ銚子(40g)」「鯵」
+    // 「生食かき」「ハマグリ」「赤ムツ」等が誤って備考に巻き込まれていた問題への対応。
     if (isNoteLine(line) || dest.awaitingPostPriceLine) {
-      if (lastItem) {
-        const qm = line.match(/^(.+?)\s*[×x]\s*(\d+(?:\.\d+)?)\s*(本|尾|杯|枚|個|箱|束|ケ|ヶ|パック|腹|匹|pc)/i);
-        let noteText = line;
-        if (qm) {
-          if (!lastItem.spec) lastItem.spec = qm[1].trim();
-          if (lastItem.quantity == null) {
-            lastItem.quantity = parseFloat(qm[2]);
-            lastItem.quantity_unit = /^pc$/i.test(qm[3]) ? 'pc' : qm[3].replace('ケ', 'ヶ');
+      const explicitNote = isNoteLine(line);
+      const treatAsNote = explicitNote || !looksLikeItemContinuationLine(nextLine);
+      if (treatAsNote) {
+        if (lastItem) {
+          const qm = line.match(/^(.+?)\s*[×x]\s*(\d+(?:\.\d+)?)\s*(本|尾|杯|枚|個|箱|束|ケ|ヶ|パック|腹|匹|pc)/i);
+          let noteText = line;
+          if (qm) {
+            if (!lastItem.spec) lastItem.spec = qm[1].trim();
+            if (lastItem.quantity == null) {
+              lastItem.quantity = parseFloat(qm[2]);
+              lastItem.quantity_unit = /^pc$/i.test(qm[3]) ? 'pc' : qm[3].replace('ケ', 'ヶ');
+            }
+            noteText = line.slice(qm[0].length).trim();
           }
-          noteText = line.slice(qm[0].length).trim();
+          noteText = noteText.replace(/⚠️/g, '').trim();
+          if (noteText) lastItem.note = lastItem.note ? `${lastItem.note} / ${noteText}` : noteText;
+        } else {
+          warnings.push(`「${line}」の対象の品目が見つかりませんでした`);
         }
-        noteText = noteText.replace(/⚠️/g, '').trim();
-        if (noteText) lastItem.note = lastItem.note ? `${lastItem.note} / ${noteText}` : noteText;
-      } else {
-        warnings.push(`「${line}」の対象の品目が見つかりませんでした`);
+        dest.awaitingPostPriceLine = false;
+        continue;
       }
+      // 先読みの結果、備考ではなく新しい品目名だと判断した（下の品目作成ロジックに委ねる）。
       dest.awaitingPostPriceLine = false;
-      continue;
     }
     dest.awaitingPostPriceLine = false;
 
@@ -361,7 +420,7 @@ export function parseLineShipmentText(rawText, referenceDateStr) {
       // ここまでの見出し情報が揃っていれば、以降は品目行として扱う
       const parsed = parseItemNameLine(line);
       // 仕入価格が無い商品があるのは正常（20章）。purchase_priceはnullのまま保持する。
-      lastItem = { ...parsed, actual_weight: null, actual_weight_unit: '', purchase_price: null, purchase_price_unit: '', note: '', raw: line };
+      lastItem = { ...parsed, actual_weight: null, actual_weight_unit: '', purchase_price: null, purchase_price_unit: '', sell_price: null, note: '', raw: line };
       dest.items.push(lastItem);
       continue;
     }
@@ -380,6 +439,8 @@ export function parseLineShipmentText(rawText, referenceDateStr) {
 // priceUnitGuess.js参照。ユーザーが確認画面で修正できることが前提）。
 // 2026-09-24 追加変更（kento指示・4回目）: 送料はparseLineShipmentText側で品目として
 // 一切扱わなくなった（items配列に追加されない）ため、ここでの送料除外フィルタは不要になった。
+// 2026-09-25 追加変更（kento指示・5回目）: 原稿にLINE実績データ上の「売値」が明記されていた
+// 場合、sell_priceとしてそのまま行データに含める（line_actual_items.sell_price）。
 export function buildLineActualRows(destinations, orderDate, defaultUnitMap = {}) {
   const rows = [];
   destinations.forEach((d) => {
@@ -402,6 +463,7 @@ export function buildLineActualRows(destinations, orderDate, defaultUnitMap = {}
         actual_weight_unit: it.actual_weight_unit || (it.actual_weight != null ? 'kg' : ''),
         purchase_price: it.purchase_price,
         purchase_price_unit: it.purchase_price_unit || guessPurchasePriceUnit(it.item_name, defaultUnitMap[it.item_name]),
+        sell_price: it.sell_price != null ? it.sell_price : null,
         note: it.note || '',
         raw_line: it.raw,
       });

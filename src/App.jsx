@@ -1045,6 +1045,7 @@ function LineActualPaste({ date, manuscriptItems, manuscriptItemById }) {
         actual_weight_unit: it.actual_weight_unit || "",
         purchase_price: it.purchase_price,
         purchase_price_unit: it.purchase_price_unit || "",
+        sell_price: it.sell_price != null ? it.sell_price : null,
         note: it.note || "",
         raw_line: it.raw_line,
       }));
@@ -1159,6 +1160,15 @@ function LineActualPaste({ date, manuscriptItems, manuscriptItemById }) {
               style={{ ...inputStyle(), width: 70, marginLeft: 4 }}
               value={it.purchase_price ?? ""}
               onChange={(e) => updateItem(it.key, { purchase_price: e.target.value ? parseFloat(e.target.value) : null })}
+            />
+          </label>
+          <label style={{ fontSize: 11, color: T.textSub }}>
+            売値
+            <input
+              style={{ ...inputStyle(), width: 70, marginLeft: 4 }}
+              placeholder="未記載なら自動計算"
+              value={it.sell_price ?? ""}
+              onChange={(e) => updateItem(it.key, { sell_price: e.target.value ? parseFloat(e.target.value) : null })}
             />
           </label>
         </div>
@@ -1360,6 +1370,10 @@ function buildLineItemsForInvoice(lines) {
       unit_price: unitPrice,
       price_unit: priceUnit,
       amount: amount || 0,
+      // 2026-09-25 追加変更（kento指示・5回目）: LINE実績データに「売値」が明記されていれば
+      // そのままinvoice_line_items.sell_priceに引き継ぐ（履歴ページの利益計算にそのまま使われる。
+      // 未記載ならnullのままで、従来通りHistoryPanel側の自動計算・手入力に委ねる）。
+      sell_price: line.sell_price != null ? Number(line.sell_price) : null,
       delivery_category: line.delivery_category,
       takkyu_ship_date: line.ship_date,
       takkyu_arrival_date: line.delivery_date,

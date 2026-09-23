@@ -216,3 +216,11 @@ alter table invoice_line_items add column if not exists line_actual_item_id uuid
 -- （1万円以上は1.1倍、1万円未満は1.15倍、消費税は考慮しない）。
 -- ============================================================================
 alter table invoice_line_items add column if not exists sell_price numeric;
+
+-- ============================================================================
+-- 追加(2026-09-25): LINE実績データの貼り付けに「売値 ¥○○」が明記されていた場合、
+-- それをそのままline_actual_items側にも保持できるようにする（kento指示・5回目
+-- 「売値記載あるものは反応してほしい」）。納品書作成時にinvoice_line_items.sell_price
+-- （上のブロックで追加済み）へそのままコピーされ、履歴ページの利益計算に使われる。
+-- ============================================================================
+alter table line_actual_items add column if not exists sell_price numeric;
