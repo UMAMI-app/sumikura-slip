@@ -35,7 +35,7 @@
 // 今後実データでフォーマットのズレが見つかった場合は、このファイルの正規表現を調整すればよい。
 
 import { ORIGIN_NAMES } from './manuscriptKadokura.js';
-import { guessPurchasePriceUnit, guessQuantityUnit } from './priceUnitGuess.js';
+import { guessPurchasePriceUnit, guessQuantityUnit, forcedUnitForName } from './priceUnitGuess.js';
 
 const CATEGORY_MAP = [
   { re: /航空便/, category: 'air' },
@@ -458,11 +458,13 @@ export function buildLineActualRows(destinations, orderDate, defaultUnitMap = {}
         // 2026-09-23 追加変更（kento指示）: 数量の記載が一切無かった場合は「1」＋品目ごとの
         // 数え方（guessQuantityUnit。既知パターンが無ければ「本」）をデフォルトにする。
         quantity: it.quantity != null ? it.quantity : 1,
-        quantity_unit: it.quantity_unit || guessQuantityUnit(it.item_name),
+        // 廣田丸は原文の明記単位（pc等）より優先して必ず「枚」（forcedUnitForName）。
+        // 「塩水ウニ(廣田丸)」のように括弧内（spec/origin）に書かれた場合も対象にする。
+        quantity_unit: forcedUnitForName([it.origin, it.item_name, it.spec].filter(Boolean).join(' ')) || it.quantity_unit || guessQuantityUnit(it.item_name),
         actual_weight: it.actual_weight,
         actual_weight_unit: it.actual_weight_unit || (it.actual_weight != null ? 'kg' : ''),
         purchase_price: it.purchase_price,
-        purchase_price_unit: it.purchase_price_unit || guessPurchasePriceUnit(it.item_name, defaultUnitMap[it.item_name]),
+        purchase_price_unit: forcedUnitForName([it.origin, it.item_name, it.spec].filter(Boolean).join(' ')) || it.purchase_price_unit || guessPurchasePriceUnit(it.item_name, defaultUnitMap[it.item_name]),
         sell_price: it.sell_price != null ? it.sell_price : null,
         note: it.note || '',
         raw_line: it.raw,

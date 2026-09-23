@@ -43,3 +43,20 @@ export function guessQuantityUnit(itemName) {
   }
   return '本';
 }
+
+// 2026-09-23 追加変更（kento指示・7回目）: 「廣田丸」を含む品目は、LINE実績データの原文に
+// 「2 pc」のように別の単位が明記されていても、数量単位・単価単位とも必ず「枚」にする。
+// （従来は原文の明記単位が最優先で、名前ルールは単位未記載時にしか効かなかったため、
+//   「廣田丸ウニ / 2 pc」が pc のまま残っていた。また「塩水ウニ」ルールより先に判定する。）
+// 対象は「廣田丸」のみ。他の船名・品目には一般化しない。
+const FORCED_UNIT_RULES = [
+  { re: /廣田丸|広田丸/, unit: '枚' },
+];
+
+export function forcedUnitForName(itemName) {
+  const name = itemName || '';
+  for (const rule of FORCED_UNIT_RULES) {
+    if (rule.re.test(name)) return rule.unit;
+  }
+  return null;
+}

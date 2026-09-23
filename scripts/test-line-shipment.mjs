@@ -248,3 +248,23 @@ console.log('OK: line shipment parser correctly skips store/orderer/request-note
   assert.equal(akamutsu.purchase_price, 5200); // 送料の「仕入 ¥2,200」に上書きされていないこと
   console.log('OK: 送料マーカー行の後に続く価格行（仕入 ¥○○）も読み飛ばされ、直前の実品目のpurchase_priceを上書きしない');
 }
+
+// 2026-09-23 追加（kento指示・7回目）: 「廣田丸」を含む品目は、原文に「2 pc」と単位が明記されて
+// いても、確認画面・保存に使う行データ（buildLineActualRows）では数量単位・単価単位とも必ず「枚」。
+// 数量の数値（2）はそのまま残す。
+{
+  const raw = readFileSync(new URL('./sample_line_shipment_request_notes.txt', import.meta.url), 'utf8');
+  const { destinations } = parseLineShipmentText(raw, '2026-09-19');
+  const rows = buildLineActualRows(destinations, '2026-09-19', { '廣田丸ウニ': 'pc' });
+  const hirota = rows.find((r) => r.item_name === '廣田丸ウニ');
+  assert.deepEqual(
+    { qty: hirota.quantity, unit: hirota.quantity_unit, priceUnit: hirota.purchase_price_unit },
+    { qty: 2, unit: '枚', priceUnit: '枚' }
+  );
+  // 「塩水ウニ」ルールより廣田丸が優先される
+  const raw2 = `👤\n浦島一樹\n角倉商店\n→\nよこい\n🚚 発送\n9/23\n📦 納品\n9/23午前中\n配達🚛\n塩水ウニ(廣田丸)\n2 pc\n仕入 ¥3,000\n`;
+  const rows2 = buildLineActualRows(parseLineShipmentText(raw2, '2026-09-23').destinations, '2026-09-23', {});
+  assert.equal(rows2[0].quantity_unit, '枚');
+  assert.equal(rows2[0].purchase_price_unit, '枚');
+  console.log('OK: 廣田丸は原文に「pc」と明記されていても数量単位・単価単位とも必ず「枚」になる');
+}

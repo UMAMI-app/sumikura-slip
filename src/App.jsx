@@ -198,6 +198,10 @@ export default function App() {
 function inputStyle() {
   return { padding: "6px 8px", border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 16, background: "#fff", color: T.textMain };
 }
+// 枠線ではなく下線だけの入力欄（LINE実績データの確認カードで使用）
+function underlineInputStyle() {
+  return { padding: "4px 2px", border: "none", borderBottom: `1px solid ${T.border}`, borderRadius: 0, fontSize: 16, background: "transparent", color: T.textMain, outline: "none" };
+}
 function tabBtnStyle(active) {
   return {
     padding: "9px 4px",
@@ -1128,58 +1132,62 @@ function LineActualPaste({ date, manuscriptItems, manuscriptItemById }) {
         </div>
       );
     }
+    // 2026-09-23 レイアウト変更（kento指示・6回目）:
+    //   1行目: 品目名（残り幅いっぱい）＋ 数量（右端）
+    //   2行目: 目方（幅そのまま）＋ 備考（ラベル無し、残り幅いっぱい）
+    //   3行目: 仕入値 ＋ 売値
+    //   入力欄は枠線ではなく下線（underlineInputStyle）
+    const u = underlineInputStyle();
+    const lbl = { fontSize: 11, color: T.textSub, flexShrink: 0, display: "flex", alignItems: "center", whiteSpace: "nowrap" };
     return (
       <div key={it.key} style={{ ...card(), marginBottom: 8, padding: 10 }}>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 6 }}>
-          <input style={{ ...inputStyle(), width: 132, fontWeight: 600 }} value={it.item_name ?? ""} onChange={(e) => updateItem(it.key, { item_name: e.target.value })} />
-          <label style={{ fontSize: 11, color: T.textSub }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6 }}>
+          <input style={{ ...u, flex: 1, minWidth: 0, fontWeight: 600 }} value={it.item_name ?? ""} onChange={(e) => updateItem(it.key, { item_name: e.target.value })} />
+          <label style={lbl}>
             数量
-            <input style={{ ...inputStyle(), width: 44, marginLeft: 4 }} value={it.quantity ?? ""} onChange={(e) => updateItem(it.key, { quantity: e.target.value ? parseFloat(e.target.value) : null })} />
-            <input style={{ ...inputStyle(), width: 40, marginLeft: 4 }} value={it.quantity_unit ?? ""} onChange={(e) => updateItem(it.key, { quantity_unit: e.target.value })} />
+            <input style={{ ...u, width: 44, marginLeft: 4 }} value={it.quantity ?? ""} onChange={(e) => updateItem(it.key, { quantity: e.target.value ? parseFloat(e.target.value) : null })} />
+            <input style={{ ...u, width: 40, marginLeft: 4 }} value={it.quantity_unit ?? ""} onChange={(e) => updateItem(it.key, { quantity_unit: e.target.value })} />
           </label>
         </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 6 }}>
-          <label style={{ fontSize: 11, color: T.textSub }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6 }}>
+          <label style={lbl}>
             目方
             <input
-              style={{ ...inputStyle(), width: 60, marginLeft: 4 }}
+              style={{ ...u, width: 60, marginLeft: 4 }}
               value={it.actual_weight ?? ""}
               onChange={(e) => updateItem(it.key, { actual_weight: e.target.value ? parseFloat(e.target.value) : null, actual_weight_unit: e.target.value ? "kg" : "" })}
             />
             kg
           </label>
-          <label style={{ fontSize: 11, color: T.textSub }}>
+          <input
+            style={{ ...u, flex: 1, minWidth: 0 }}
+            value={it.note ?? ""}
+            onChange={(e) => updateItem(it.key, { note: e.target.value })}
+          />
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <label style={lbl}>
             仕入値
             <input
-              style={{ ...inputStyle(), width: 50, marginLeft: 4 }}
+              style={{ ...u, width: 50, marginLeft: 4 }}
               placeholder="kg/本"
               value={it.purchase_price_unit ?? ""}
               onChange={(e) => updateItem(it.key, { purchase_price_unit: e.target.value })}
             />
             <input
-              style={{ ...inputStyle(), width: 70, marginLeft: 4 }}
+              style={{ ...u, width: 70, marginLeft: 4 }}
               value={it.purchase_price ?? ""}
               onChange={(e) => updateItem(it.key, { purchase_price: e.target.value ? parseFloat(e.target.value) : null })}
             />
           </label>
-          <label style={{ fontSize: 11, color: T.textSub }}>
+          <label style={lbl}>
             売値
             <input
-              style={{ ...inputStyle(), width: 70, marginLeft: 4 }}
-              placeholder="未記載なら自動計算"
+              style={{ ...u, width: 70, marginLeft: 4 }}
               value={it.sell_price ?? ""}
               onChange={(e) => updateItem(it.key, { sell_price: e.target.value ? parseFloat(e.target.value) : null })}
             />
           </label>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          <label style={{ fontSize: 11, color: T.textSub, flexShrink: 0 }}>備考</label>
-          <input
-            style={{ ...inputStyle(), flex: 1, minWidth: 120 }}
-            placeholder="備考を追記"
-            value={it.note ?? ""}
-            onChange={(e) => updateItem(it.key, { note: e.target.value })}
-          />
         </div>
       </div>
     );
