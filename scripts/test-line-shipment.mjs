@@ -50,3 +50,16 @@ const rows = buildLineActualRows(destinations, '2026-09-20', {});
 assert.equal(rows.length, 8);
 
 console.log('OK: line shipment parser correctly skips store/orderer/request-note lines (real sample)');
+
+// 2026-09-23 追加（kento指示）: 発注者名・発注元（角倉商店）・ステータス（未確定）が
+// 品目として誤登録される不具合の回帰テスト。「👤」直後の行は内容によらず発注者として
+// 読み飛ばす（位置ベース）＋既知の発注元・ステータス値も読み飛ばす（内容ベース）の二重チェック。
+{
+  const raw = `👤\n \n浦島一樹\n未確定\n角倉商店\n→\nよこい\n🚚 発送\n9/22\n📦 納品\n9/22午前中\n配達🚛\n真鯛\n1.2 ㎏\n仕入 ¥6,000\n送料\n1\n`;
+  const { destinations, warnings } = parseLineShipmentText(raw, '2026-09-22');
+  assert.equal(warnings.length, 0);
+  assert.equal(destinations.length, 1);
+  assert.equal(destinations[0].destinationName, 'よこい');
+  assert.deepEqual(destinations[0].items.map((it) => it.item_name), ['真鯛', '送料']);
+  console.log('OK: orderer/supplier/status header lines are never captured as items');
+}

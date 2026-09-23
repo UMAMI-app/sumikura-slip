@@ -56,6 +56,18 @@ function isNoteLine(line) {
   return line.includes('⚠️') || NOTE_KEYWORDS.some((k) => line.includes(k));
 }
 
+// 2026-09-23 追加変更（kento指示）: 「👤」ブロックの見出し部分（発注者名・ステータス・発注元）を
+// 品目として誤登録しないための、位置＋内容の二重チェック。
+// 位置ベース: 「👤」の直後に来る行は内容を問わず必ず発注者名なので読み飛ばす（awaitingOrderer）。
+// 内容ベース: 発注元（魚屋）名・ステータスは既知の値をリスト化し、念のためどの位置でも
+// （destinationNameが確定するまでの間は）該当すれば読み飛ばす、という二段構えにする。
+const KNOWN_ORDERER_NAMES = ['浦島一樹', '後藤聖和', '見富剛', '奥秋勝也', '岡本研人', '森岡十夢', '旨味フーズ'];
+const KNOWN_SUPPLIER_NAMES = ['角倉商店'];
+const KNOWN_STATUS_VALUES = ['未確定'];
+function isKnownHeaderLine(line) {
+  return KNOWN_ORDERER_NAMES.includes(line) || KNOWN_SUPPLIER_NAMES.includes(line) || KNOWN_STATUS_VALUES.includes(line);
+}
+
 function classifyCategory(text) {
   const found = CATEGORY_MAP.find((c) => c.re.test(text));
   return found ? found.category : 'ground';
@@ -128,6 +140,7 @@ export function parseLineShipmentText(rawText, referenceDateStr) {
 
   const newDest = () => ({
     destinationName: '',
+    awaitingOrderer: false,
     awaitingDestinationLine: false,
     awaitingShipDate: false,
     awaitingDeliveryDate: false,
@@ -154,6 +167,7 @@ export function parseLineShipmentText(rawText, referenceDateStr) {
     if (line === '👤') {
       flushDest();
       dest = newDest();
+      dest.awaitingOrderer = true; // 「👤」を実際に見たときだけ、次の1行を発注者として読み飛ばす
       continue;
     }
     if (!dest) {
@@ -162,6 +176,11 @@ export function parseLineShipmentText(rawText, referenceDateStr) {
     }
 
     let m;
+    // 「👤」の直後の1行は、内容を問わず必ず発注者名（位置で確定・kento確認済み）。
+    if (dest.awaitingOrderer) { dest.awaitingOrderer = false; continue; }
+    // 発注元（魚屋）名・ステータスは既知の値なら、まだ納品先が確定していない間は読み飛ばす
+    // （内容ベースの二重チェック。位置ベースの読み飛ばしと合わせて、念のため二重に防ぐ）。
+    if (!dest.destinationName && isKnownHeaderLine(line)) { continue; }
     if (line === '→') { dest.awaitingDestinationLine = true; continue; }
     if (dest.awaitingDestinationLine) {
       dest.destinationName = line;
