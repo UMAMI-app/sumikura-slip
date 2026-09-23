@@ -63,3 +63,19 @@ console.log('OK: line shipment parser correctly skips store/orderer/request-note
   assert.deepEqual(destinations[0].items.map((it) => it.item_name), ['真鯛', '送料']);
   console.log('OK: orderer/supplier/status header lines are never captured as items');
 }
+
+// 2026-09-23 追加（kento指示）: 数量の記載が無い場合は「1」＋品目ごとの数え方（ウニ→枚、
+// それ以外は「本」）をデフォルトで補うようにした機能の回帰テスト。
+{
+  const raw = `👤\n \n浦島一樹\n未確定\n角倉商店\n→\nよこい\n🚚 発送\n9/23\n📦 納品\n9/23午前中\n配達🚛\n由良ウニ\n仕入 ¥8,000\nカツオ\n3.3 ㎏\n仕入 ¥1,600\n極上　選り抜きハモ\n2.2 ㎏\n仕入 ¥4,500\n500g × 4本\n送料\n1\n`;
+  const { destinations, warnings } = parseLineShipmentText(raw, '2026-09-23');
+  assert.equal(warnings.length, 0);
+  const rows = buildLineActualRows(destinations, '2026-09-23', {});
+  const uni = rows.find((r) => r.item_name === '由良ウニ');
+  assert.deepEqual({ qty: uni.quantity, unit: uni.quantity_unit }, { qty: 1, unit: '枚' }); // 数量記載なし＋「ウニ」既知パターン
+  const katsuo = rows.find((r) => r.item_name === 'カツオ');
+  assert.deepEqual({ qty: katsuo.quantity, unit: katsuo.quantity_unit }, { qty: 1, unit: '本' }); // 数量記載なし→デフォルト1本
+  const hamo = rows.find((r) => r.item_name === '極上 選り抜きハモ');
+  assert.deepEqual({ qty: hamo.quantity, unit: hamo.quantity_unit }, { qty: 4, unit: '本' }); // 記載済みの数量は上書きしない
+  console.log('OK: missing quantity defaults to 1 + item-specific counting unit (uni=枚, default=本)');
+}

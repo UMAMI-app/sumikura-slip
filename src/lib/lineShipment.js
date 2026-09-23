@@ -35,7 +35,7 @@
 // 今後実データでフォーマットのズレが見つかった場合は、このファイルの正規表現を調整すればよい。
 
 import { ORIGIN_NAMES } from './manuscriptKadokura.js';
-import { guessPurchasePriceUnit } from './priceUnitGuess.js';
+import { guessPurchasePriceUnit, guessQuantityUnit } from './priceUnitGuess.js';
 
 const CATEGORY_MAP = [
   { re: /航空便/, category: 'air' },
@@ -339,8 +339,10 @@ export function buildLineActualRows(destinations, orderDate, defaultUnitMap = {}
         item_name: it.item_name,
         origin: it.origin || '',
         spec: it.spec || '',
-        quantity: it.quantity,
-        quantity_unit: it.quantity_unit || '',
+        // 2026-09-23 追加変更（kento指示）: 数量の記載が一切無かった場合は「1」＋品目ごとの
+        // 数え方（guessQuantityUnit。既知パターンが無ければ「本」）をデフォルトにする。
+        quantity: it.quantity != null ? it.quantity : 1,
+        quantity_unit: it.quantity_unit || guessQuantityUnit(it.item_name),
         actual_weight: it.actual_weight,
         actual_weight_unit: it.actual_weight_unit || (it.actual_weight != null ? 'kg' : ''),
         purchase_price: it.purchase_price,

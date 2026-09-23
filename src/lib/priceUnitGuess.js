@@ -22,3 +22,17 @@ export function guessPurchasePriceUnit(itemName, learnedUnit) {
   if (learnedUnit) return learnedUnit;
   return 'kg';
 }
+
+// 2026-09-23 追加変更（kento指示）: 数量(quantity/quantity_unit)側の初期値推測。
+// LINE実績データに数量の記載が一切無かった場合、quantityは1、quantity_unitは
+// 品目名による既知パターン（NAME_UNIT_RULESを共用。ウニ・雲丹は「枚」等）で推測し、
+// どれにも当てはまらなければ「本」をデフォルトにする（purchase_price_unitのkgデフォルトとは別）。
+// 学習済み単位(product_price_units)は単価単位の学習用データであり、数量の数え方とは
+// 意味が異なるため、ここでは使わない。
+export function guessQuantityUnit(itemName) {
+  const name = itemName || '';
+  for (const rule of NAME_UNIT_RULES) {
+    if (rule.re.test(name)) return rule.unit;
+  }
+  return '本';
+}
