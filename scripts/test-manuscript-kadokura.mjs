@@ -38,3 +38,19 @@ assert.deepEqual(
 );
 assert.ok(skippedLines.some((s) => s.includes('宮津')));
 console.log('OK: kadokura extraction basic cases pass');
+
+// 2026-09-23 追加（kento指示）: 由良ウニの船名（廣田丸・与助・与助丸・山由丸）を品目名に残す
+{
+  const { extractKadokuraManuscriptItems: ex } = await import('../src/lib/manuscriptKadokura.js');
+  const raw = '・由良ウニ兵庫(廣田丸)\nSP)70g-80g 1枚 15,800\n特上)70g-80g 1枚 14,800\n\n・由良ウニ兵庫(与助)\nSP)70g-80g 1枚 15,000\n\n・由良ウニ兵庫(与助丸)\nSP)70g-80g 1枚 15,000\n\n・由良ウニ\n兵庫(山由丸)\nSP)70g 1枚 13,000\n';
+  const { items } = ex(raw);
+  const assert2 = (await import('node:assert')).default;
+  assert2.deepEqual(items.map((i) => [i.item_name, i.origin, i.unit_price, i.price_unit]), [
+    ['由良ウニ(廣田丸)', '兵庫', 15800, '枚'],
+    ['由良ウニ(廣田丸)', '兵庫', 14800, '枚'],
+    ['由良ウニ(与助)', '兵庫', 15000, '枚'],
+    ['由良ウニ(与助丸)', '兵庫', 15000, '枚'],
+    ['由良ウニ(山由丸)', '兵庫', 13000, '枚'],
+  ]);
+  console.log('OK: 由良ウニの船名（廣田丸・与助・与助丸・山由丸）を品目名に残す');
+}

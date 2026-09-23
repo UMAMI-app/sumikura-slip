@@ -315,6 +315,9 @@ export function parseVariantLineRaw(raw) {
   return { kind: 'none', sizeText: s, priceOk: false };
 }
 
+// 由良ウニの船名（「与助丸」を「与助」より先に判定する）
+const UNI_BOAT_RE = /廣田丸|広田丸|与助丸|与助|山由丸/;
+
 // 角倉タブの原稿テキストから、この発注・納品管理アプリ向けの原稿商品を抽出する。
 export function extractKadokuraManuscriptItems(rawText) {
   const groups = groupLines(rawText);
@@ -334,7 +337,15 @@ export function extractKadokuraManuscriptItems(rawText) {
     }
 
     const resolved = resolveNameOrigin(group);
-    const itemName = normalizeName(resolved.itemName);
+    let itemName = normalizeName(resolved.itemName);
+    // 2026-09-23 追加（kento指示）: 由良ウニの船名（廣田丸・与助・与助丸・山由丸）は
+    // 「・由良ウニ兵庫(廣田丸)」のように産地の後ろの括弧に書かれることが多く、従来は産地の
+    // 付属情報として捨てられていた（結果が「由良ウニ(兵庫)」になっていた）。
+    // 品目名・産地行のどこかに船名があれば、品目名に「由良ウニ(廣田丸)」の形で残す。
+    const boatMatch = `${group.name || ''} ${group.originLine || ''}`.match(UNI_BOAT_RE);
+    if (boatMatch && !itemName.includes(boatMatch[0])) {
+      itemName = `${itemName}(${boatMatch[0]})`;
+    }
     const origin = resolved.pref || '';
 
     group.variants.forEach((v) => {

@@ -12,7 +12,7 @@ import {
   computeSellPrice,
   buildProfitTotals,
 } from "./lib/pricing";
-import { rankManuscriptCandidates } from "./lib/matching";
+import { rankManuscriptCandidates, pickCertainCandidate, searchManuscriptItems } from "./lib/matching";
 
 // ---- テーマ（UMAMI stockと近い配色に合わせた最小限のインラインスタイル） ----
 const T = {
@@ -1033,7 +1033,15 @@ function LineActualPaste({ date, manuscriptItems, manuscriptItemById }) {
     setSaving(true);
     setErr("");
     try {
-      const payload = preview.items.map((it) => ({
+      // 2026-09-23 追加（kento指示）: 原稿との紐付けは「確実なもの」（pickCertainCandidate:
+      // 品目名の完全一致 or 確実な対応表で、同点の候補が無いもの）だけをデフォルトで設定する。
+      const payload = preview.items.map((it) => {
+        const certain = isShippingRowName(it.item_name)
+          ? null
+          : pickCertainCandidate({ item_name: it.item_name, spec: it.spec, origin: it.origin }, manuscriptItems);
+        return {
+        manuscript_item_id: certain ? certain.id : null,
+        manuscript_price_status: certain ? "linked" : "none",
         order_date: it.order_date,
         destination: it.destination || "",
         ship_date: it.ship_date,
@@ -1052,7 +1060,8 @@ function LineActualPaste({ date, manuscriptItems, manuscriptItemById }) {
         sell_price: it.sell_price != null ? it.sell_price : null,
         note: it.note || "",
         raw_line: it.raw_line,
-      }));
+        };
+      });
       await db.insertMany("line_actual_items", payload);
 
       // 商品ごとの単価単位を学習・更新する（原稿パーサー側と同じ学習テーブルを共有する）。
@@ -1134,7 +1143,7 @@ function LineActualPaste({ date, manuscriptItems, manuscriptItemById }) {
     }
     // 2026-09-23 レイアウト変更（kento指示・6回目）:
     //   1行目: 品目名（残り幅いっぱい）＋ 数量（右端）
-    //   2行目: 目方（幅そのまま）＋ 備考（ラベル無し、残り幅いっぱい）
+    //   2行目: 目方（幅そのまま）＋ 備考（欄内に薄く小さく「備考」、右端に×で削除。残り幅いっぱい）
     //   3行目: 仕入値 ＋ 売値
     //   入力欄は枠線ではなく下線（underlineInputStyle）
     const u = underlineInputStyle();
@@ -1159,11 +1168,25 @@ function LineActualPaste({ date, manuscriptItems, manuscriptItemById }) {
             />
             kg
           </label>
-          <input
-            style={{ ...u, flex: 1, minWidth: 0 }}
-            value={it.note ?? ""}
-            onChange={(e) => updateItem(it.key, { note: e.target.value })}
-          />
+          {/* 備考欄: 下線の中に薄く小さく「備考」、右端に×（備考を空にする）ボタン */}
+          <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", borderBottom: `1px solid ${T.border}` }}>
+            <span style={{ fontSize: 10, color: T.textSub, opacity: 0.55, flexShrink: 0, marginRight: 4 }}>備考</span>
+            <input
+              style={{ ...u, borderBottom: "none", flex: 1, minWidth: 0 }}
+              value={it.note ?? ""}
+              onChange={(e) => updateItem(it.key, { note: e.target.value })}
+            />
+            {it.note ? (
+              <button
+                type="button"
+                aria-label="備考を削除"
+                onClick={() => updateItem(it.key, { note: "" })}
+                style={{ border: "none", background: "transparent", color: T.textSub, fontSize: 16, lineHeight: 1, padding: "2px 4px", cursor: "pointer", flexShrink: 0 }}
+              >
+                ×
+              </button>
+            ) : null}
+          </div>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
           <label style={lbl}>
@@ -1296,8 +1319,8 @@ function LineActualPaste({ date, manuscriptItems, manuscriptItemById }) {
 
 // LINE実績データの1品目に対する原稿(manuscript_items)紐付け欄（STEP5仕様、案A）。
 // rankManuscriptCandidates（matching.js）による上位候補（最大5件）を先頭に、
-// それ以外の全商品を「その他」としてまとめる。候補が0件の場合は「その他」欄のみになる
-// （＝ユーザーが全件から手動選択する形。AIによる自動確定はしない）。
+// それ以外の全商品を「その他」としてまとめる。候補が0件で未紐付けの場合は、プルダウンの代わりに
+// 原稿を検索して選ぶ検索欄を出す。確実な候補（pickCertainCandidate）は確定時に自動で紐付け済み。
 function ManuscriptLinkSelect({ row, manuscriptItems, manuscriptOptions, onLink }) {
   const candidates = useMemo(
     () =>
@@ -1306,6 +1329,43 @@ function ManuscriptLinkSelect({ row, manuscriptItems, manuscriptOptions, onLink 
   );
   const candidateIds = useMemo(() => new Set(candidates.map((c) => c.item.id)), [candidates]);
   const restOptions = useMemo(() => manuscriptOptions.filter((o) => !candidateIds.has(o.value)), [manuscriptOptions, candidateIds]);
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const results = useMemo(() => searchManuscriptItems(query, manuscriptItems).slice(0, 10), [query, manuscriptItems]);
+
+  // 2026-09-23 変更（kento指示）: 候補が無く、まだ紐付けもされていない場合は、
+  // 「候補なし（全商品から選択）」のプルダウンの代わりに検索欄を出す。
+  if (candidates.length === 0 && !row.manuscript_item_id) {
+    return (
+      <div style={{ position: "relative", width: 230, maxWidth: "100%" }}>
+        <input
+          style={{ ...inputStyle(), width: "100%", boxSizing: "border-box", fontSize: 12 }}
+          placeholder="候補なし：原稿から検索"
+          value={query}
+          onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
+          onFocus={() => setOpen(true)}
+          onBlur={() => setTimeout(() => setOpen(false), 150)}
+        />
+        {open && query.trim() && (
+          <div style={{ position: "absolute", zIndex: 20, top: "100%", left: 0, right: 0, background: "#fff", border: `1px solid ${T.border}`, borderRadius: 6, maxHeight: 240, overflowY: "auto", boxShadow: "0 4px 12px rgba(0,0,0,0.12)" }}>
+            {results.length === 0 ? (
+              <div style={{ padding: 8, fontSize: 12, color: T.textSub }}>該当なし</div>
+            ) : (
+              results.map((mi) => (
+                <div
+                  key={mi.id}
+                  onMouseDown={(e) => { e.preventDefault(); onLink(row, mi.id); setQuery(""); setOpen(false); }}
+                  style={{ padding: "6px 8px", fontSize: 12, cursor: "pointer", borderBottom: `1px solid ${T.softBorder}` }}
+                >
+                  {mi.item_name}（{mi.origin || "産地未記載"}）{mi.spec ? " " + mi.spec : ""} {fmtYen(mi.unit_price)}/{mi.price_unit || "?"}
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <select
@@ -1323,7 +1383,7 @@ function ManuscriptLinkSelect({ row, manuscriptItems, manuscriptOptions, onLink 
           ))}
         </optgroup>
       )}
-      <optgroup label={candidates.length > 0 ? "その他（全商品）" : "候補なし（全商品から選択）"}>
+      <optgroup label="その他（全商品）">
         {restOptions.map((o) => (
           <option key={o.value} value={o.value}>{o.label}</option>
         ))}
