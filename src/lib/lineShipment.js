@@ -274,6 +274,12 @@ export function parseLineShipmentText(rawText, referenceDateStr) {
     if (dest.shippingFeeLinesToConsume > 0) {
       if (isShippingFeeContinuationLine(line)) {
         dest.shippingFeeLinesToConsume--;
+        // 2026-09-23 追加（kento指示）: 送料の「仕入 ¥○○」の直後の行も、通常の仕入の直後と同じく
+        // 直前の実品目（送料は品目にしないので、その前の本当の品目）の備考として扱う。
+        // 例:「天然鯛SP(2k)…/送料(箱代含む)/1/仕入 ¥2,000/(明石から)」→「明石から」は天然鯛の備考。
+        // （従来は送料の価格行を読み飛ばすだけで「仕入の直後」扱いにしていなかったため、
+        //   「(明石から)」が品目名の無い新しい品目として登録されていた）
+        if (/^(仕入|売値)\s*[¥￥]/.test(line)) dest.awaitingPostPriceLine = true;
         continue;
       }
       dest.shippingFeeLinesToConsume = 0; // 送料に関係ない行が来たので通常の判定に戻す
@@ -388,6 +394,16 @@ export function parseLineShipmentText(rawText, referenceDateStr) {
     // 来ていれば、今見ている行こそが新しい品目名だったと判断し備考にはしない
     // （＝下の品目作成ロジックに処理を委ねる）。実データで「メヒカリ銚子(40g)」「鯵」
     // 「生食かき」「ハマグリ」「赤ムツ」等が誤って備考に巻き込まれていた問題への対応。
+    // 2026-09-23 追加（kento指示）: 行全体がカッコ書きだけの行（例:「(明石から)」）は品目名になり得ない
+    // （品目名が空の品目ができてしまう）ため、位置に関係なく直前の実品目の備考として扱う。
+    const wholeParen = line.match(/^[（(]([^)）]+)[)）]$/);
+    if (wholeParen && lastItem) {
+      const t = wholeParen[1].trim();
+      if (t) lastItem.note = lastItem.note ? `${lastItem.note} / ${t}` : t;
+      dest.awaitingPostPriceLine = false;
+      continue;
+    }
+
     if (isNoteLine(line) || dest.awaitingPostPriceLine) {
       const explicitNote = isNoteLine(line);
       const treatAsNote = explicitNote || !looksLikeItemContinuationLine(nextLine);
@@ -404,6 +420,8 @@ export function parseLineShipmentText(rawText, referenceDateStr) {
             noteText = line.slice(qm[0].length).trim();
           }
           noteText = noteText.replace(/⚠️/g, '').trim();
+          const pw = noteText.match(/^[（(]([^)）]+)[)）]$/);
+          if (pw) noteText = pw[1].trim();
           if (noteText) lastItem.note = lastItem.note ? `${lastItem.note} / ${noteText}` : noteText;
         } else {
           warnings.push(`「${line}」の対象の品目が見つかりませんでした`);

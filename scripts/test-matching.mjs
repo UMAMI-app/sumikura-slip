@@ -15,7 +15,7 @@ const ms = [
 const certain = (name, extra = {}) => pickCertainCandidate({ item_name: name, ...extra }, ms)?.id ?? null;
 
 // 天然鯛・タイ・天タイ・鯛 → 活天然タイSP（確実）
-for (const n of ['天然鯛', 'タイ', '天タイ', '鯛']) assert.equal(certain(n), 'tai-sp', n);
+for (const n of ['天然鯛', 'タイ', '天タイ', '鯛', '天然鯛SP']) assert.equal(certain(n), 'tai-sp', n);
 // 完全一致で1件だけ → 確実
 assert.equal(certain('マアジ'), 'aji');
 // マダイ・真鯛 → 活天然タイ（規格違い2件なので候補に出るが確定はしない／1件なら確定）

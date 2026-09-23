@@ -279,3 +279,19 @@ console.log('OK: line shipment parser correctly skips store/orderer/request-note
   assert.deepEqual([rows3[0].quantity, rows3[0].quantity_unit, rows3[0].purchase_price_unit], [1, '枚', '枚']);
   console.log('OK: 塩水ウニ以外のウニ系（廣田丸・与助丸・山由丸・ウニ・うに・雲丹）は原文にpcと明記されていても必ず「枚」');
 }
+
+// 2026-09-23 追加（kento指示）: 送料の仕入の直後の「(明石から)」は品目にせず、天然鯛の備考にする
+{
+  const raw = `👤\n \n後藤聖和\n未確定\n角倉商店\n→\n日本料理四四A2(ヨシアツ)\n🚚 発送\n9/19\n📦 納品\n9/20午前中\n宅急便\n天然鯛SP(2k) 1本\n2.2 ㎏\n仕入 ¥6,500\n⚠️内臓・エラ・血処理‼️\n送料(箱代含む)\n1 \n仕入 ¥2,000\n(明石から)\n`;
+  const { destinations } = parseLineShipmentText(raw, '2026-09-19');
+  const items = destinations[0].items;
+  assert.equal(items.length, 1);
+  assert.equal(items[0].item_name, '天然鯛SP');
+  assert.equal(items[0].purchase_price, 6500);
+  assert.equal(items[0].note, '内臓・エラ・血処理‼️ / 明石から');
+  // 送料の仕入の直後が本当の次の品目なら、従来どおり品目として拾う
+  const raw2 = `👤\n後藤聖和\n角倉商店\n→\nよこい\n🚚 発送\n9/19\n📦 納品\n9/19午前中\n配達🚛\n真鯛\n仕入 ¥3,000\n了解\n送料\n1\n仕入 ¥1,000\n赤ムツ(600g)\n1.1 ㎏\n仕入 ¥5,200\n`;
+  const items2 = parseLineShipmentText(raw2, '2026-09-19').destinations[0].items;
+  assert.deepEqual(items2.map((i) => i.item_name), ['真鯛', '赤ムツ']);
+  console.log('OK: 送料の仕入の直後の「(明石から)」は品目にせず直前の実品目の備考になる');
+}

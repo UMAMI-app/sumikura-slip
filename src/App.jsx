@@ -1089,6 +1089,35 @@ function LineActualPaste({ date, manuscriptItems, manuscriptItemById }) {
     }
   };
 
+  // 確定済みLINE実績データの編集（id → 編集中の下書き）
+  const [editingSaved, setEditingSaved] = useState({});
+  const [savingEditId, setSavingEditId] = useState(null);
+  const EDITABLE_FIELDS = ["item_name", "quantity", "quantity_unit", "actual_weight", "actual_weight_unit", "purchase_price", "purchase_price_unit", "sell_price", "note"];
+  const startEditSaved = (r) => setEditingSaved((prev) => ({ ...prev, [r.id]: { ...r } }));
+  const cancelEditSaved = (id) => setEditingSaved((prev) => { const n = { ...prev }; delete n[id]; return n; });
+  const patchEditSaved = (id, patch) => setEditingSaved((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }));
+  const saveEditSaved = async (id) => {
+    const draft = editingSaved[id];
+    if (!draft) return;
+    const patch = {};
+    // 数値欄は編集UI側で数値かnullに変換済み。文字欄（品目・単位・備考）は空文字で保存する。
+    EDITABLE_FIELDS.forEach((f) => {
+      const isText = f === "item_name" || f === "note" || f.endsWith("_unit");
+      patch[f] = draft[f] ?? (isText ? "" : null);
+    });
+    setSavingEditId(id);
+    setErr("");
+    try {
+      await db.update("line_actual_items", id, patch);
+      setSaved((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+      cancelEditSaved(id);
+    } catch (e) {
+      setErr("修正の保存に失敗しました: " + (e.message || e));
+    } finally {
+      setSavingEditId(null);
+    }
+  };
+
   const handleDeleteSaved = async (id) => {
     setSaved((prev) => prev.filter((r) => r.id !== id));
     try {
@@ -1123,18 +1152,20 @@ function LineActualPaste({ date, manuscriptItems, manuscriptItemById }) {
     [manuscriptItems]
   );
 
-  const renderPreviewItem = (it) => {
+  // 品目カードの編集UI。解析直後のプレビュー（renderPreviewItem）と、確定済み行の編集
+  // （2026-09-23 kento指示: 確定後も修正できるように）の両方で共用する。
+  const renderItemEditor = (it, update) => {
     if (isShippingRowName(it.item_name)) {
       return (
-        <div key={it.key} style={{ ...card(), marginBottom: 8, padding: 10, background: "#f3f3f3" }}>
+        <div key={it.key || it.id} style={{ ...card(), marginBottom: 8, padding: 10, background: "#f3f3f3" }}>
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-            <input style={{ ...inputStyle(), width: 130, fontWeight: 600 }} value={it.item_name ?? ""} onChange={(e) => updateItem(it.key, { item_name: e.target.value })} />
+            <input style={{ ...inputStyle(), width: 130, fontWeight: 600 }} value={it.item_name ?? ""} onChange={(e) => update({ item_name: e.target.value })} />
             <label style={{ fontSize: 11, color: T.textSub }}>
               金額
               <input
                 style={{ ...inputStyle(), width: 80, marginLeft: 4 }}
                 value={it.purchase_price ?? ""}
-                onChange={(e) => updateItem(it.key, { purchase_price: e.target.value ? parseFloat(e.target.value) : null })}
+                onChange={(e) => update({ purchase_price: e.target.value ? parseFloat(e.target.value) : null })}
               />
             </label>
           </div>
@@ -1149,13 +1180,13 @@ function LineActualPaste({ date, manuscriptItems, manuscriptItemById }) {
     const u = underlineInputStyle();
     const lbl = { fontSize: 11, color: T.textSub, flexShrink: 0, display: "flex", alignItems: "center", whiteSpace: "nowrap" };
     return (
-      <div key={it.key} style={{ ...card(), marginBottom: 8, padding: 10 }}>
+      <div key={it.key || it.id} style={{ ...card(), marginBottom: 8, padding: 10 }}>
         <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6 }}>
-          <input style={{ ...u, flex: 1, minWidth: 0, fontWeight: 600 }} value={it.item_name ?? ""} onChange={(e) => updateItem(it.key, { item_name: e.target.value })} />
+          <input style={{ ...u, flex: 1, minWidth: 0, fontWeight: 600 }} value={it.item_name ?? ""} onChange={(e) => update({ item_name: e.target.value })} />
           <label style={lbl}>
             数量
-            <input style={{ ...u, width: 44, marginLeft: 4 }} value={it.quantity ?? ""} onChange={(e) => updateItem(it.key, { quantity: e.target.value ? parseFloat(e.target.value) : null })} />
-            <input style={{ ...u, width: 40, marginLeft: 4 }} value={it.quantity_unit ?? ""} onChange={(e) => updateItem(it.key, { quantity_unit: e.target.value })} />
+            <input style={{ ...u, width: 44, marginLeft: 4 }} value={it.quantity ?? ""} onChange={(e) => update({ quantity: e.target.value ? parseFloat(e.target.value) : null })} />
+            <input style={{ ...u, width: 40, marginLeft: 4 }} value={it.quantity_unit ?? ""} onChange={(e) => update({ quantity_unit: e.target.value })} />
           </label>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6 }}>
@@ -1164,7 +1195,7 @@ function LineActualPaste({ date, manuscriptItems, manuscriptItemById }) {
             <input
               style={{ ...u, width: 60, marginLeft: 4 }}
               value={it.actual_weight ?? ""}
-              onChange={(e) => updateItem(it.key, { actual_weight: e.target.value ? parseFloat(e.target.value) : null, actual_weight_unit: e.target.value ? "kg" : "" })}
+              onChange={(e) => update({ actual_weight: e.target.value ? parseFloat(e.target.value) : null, actual_weight_unit: e.target.value ? "kg" : "" })}
             />
             kg
           </label>
@@ -1174,13 +1205,13 @@ function LineActualPaste({ date, manuscriptItems, manuscriptItemById }) {
             <input
               style={{ ...u, borderBottom: "none", flex: 1, minWidth: 0 }}
               value={it.note ?? ""}
-              onChange={(e) => updateItem(it.key, { note: e.target.value })}
+              onChange={(e) => update({ note: e.target.value })}
             />
             {it.note ? (
               <button
                 type="button"
                 aria-label="備考を削除"
-                onClick={() => updateItem(it.key, { note: "" })}
+                onClick={() => update({ note: "" })}
                 style={{ border: "none", background: "transparent", color: T.textSub, fontSize: 16, lineHeight: 1, padding: "2px 4px", cursor: "pointer", flexShrink: 0 }}
               >
                 ×
@@ -1195,12 +1226,12 @@ function LineActualPaste({ date, manuscriptItems, manuscriptItemById }) {
               style={{ ...u, width: 50, marginLeft: 4 }}
               placeholder="kg/本"
               value={it.purchase_price_unit ?? ""}
-              onChange={(e) => updateItem(it.key, { purchase_price_unit: e.target.value })}
+              onChange={(e) => update({ purchase_price_unit: e.target.value })}
             />
             <input
               style={{ ...u, width: 70, marginLeft: 4 }}
               value={it.purchase_price ?? ""}
-              onChange={(e) => updateItem(it.key, { purchase_price: e.target.value ? parseFloat(e.target.value) : null })}
+              onChange={(e) => update({ purchase_price: e.target.value ? parseFloat(e.target.value) : null })}
             />
           </label>
           <label style={lbl}>
@@ -1208,13 +1239,15 @@ function LineActualPaste({ date, manuscriptItems, manuscriptItemById }) {
             <input
               style={{ ...u, width: 70, marginLeft: 4 }}
               value={it.sell_price ?? ""}
-              onChange={(e) => updateItem(it.key, { sell_price: e.target.value ? parseFloat(e.target.value) : null })}
+              onChange={(e) => update({ sell_price: e.target.value ? parseFloat(e.target.value) : null })}
             />
           </label>
         </div>
       </div>
     );
   };
+
+  const renderPreviewItem = (it) => renderItemEditor(it, (patch) => updateItem(it.key, patch));
 
   const renderGroupHeader = (g, gi) => {
     const label = formatShipDeliveryLabel(g);
@@ -1296,13 +1329,35 @@ function LineActualPaste({ date, manuscriptItems, manuscriptItemById }) {
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12 }}>
                   <span>
                     {r.item_name}{r.spec ? `(${r.spec})` : ""}{" "}
+                    {r.quantity != null && r.quantity !== "" ? `${r.quantity}${r.quantity_unit || ""} ` : ""}
                     {r.actual_weight != null && r.actual_weight !== "" ? `${r.actual_weight}${r.actual_weight_unit || "kg"} ` : ""}
                     {isShippingRowName(r.item_name)
                       ? (r.purchase_price != null ? fmtYen(r.purchase_price) : "金額なし")
                       : (r.purchase_price != null ? `${fmtYen(r.purchase_price)}/${r.purchase_price_unit || "?"}` : "仕入価格なし")}
                   </span>
-                  <button style={{ ...btn(false), padding: "2px 8px", fontSize: 11 }} onClick={() => handleDeleteSaved(r.id)}>削除</button>
+                  <span style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                    {!editingSaved[r.id] && (
+                      <button style={{ ...btn(false), padding: "2px 8px", fontSize: 11 }} onClick={() => startEditSaved(r)}>編集</button>
+                    )}
+                    <button style={{ ...btn(false), padding: "2px 8px", fontSize: 11 }} onClick={() => handleDeleteSaved(r.id)}>削除</button>
+                  </span>
                 </div>
+                {editingSaved[r.id] && (
+                  <div style={{ marginTop: 6 }}>
+                    {renderItemEditor(editingSaved[r.id], (patch) => patchEditSaved(r.id, patch))}
+                    {r.invoice_id && (
+                      <div style={{ fontSize: 11, color: T.warn, marginBottom: 4 }}>
+                        ⚠️この行は納品書に保存済みです。ここで修正しても保存済みの納品書には反映されません。
+                      </div>
+                    )}
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <button style={btn(true)} disabled={savingEditId === r.id} onClick={() => saveEditSaved(r.id)}>
+                        {savingEditId === r.id ? "保存中..." : "修正を保存"}
+                      </button>
+                      <button style={btn(false)} onClick={() => cancelEditSaved(r.id)}>キャンセル</button>
+                    </div>
+                  </div>
+                )}
                 {!isShippingRowName(r.item_name) && (
                   <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 4, flexWrap: "wrap" }}>
                     <ManuscriptLinkSelect row={r} manuscriptOptions={manuscriptOptions} manuscriptItems={manuscriptItems} onLink={setManuscriptLink} />

@@ -172,7 +172,9 @@ export function rankManuscriptCandidates(lineItem, manuscriptItems) {
     if (!mName) continue;
 
     let tier = 0;
-    const alias = CERTAIN_ALIASES.find((a) => a.lineNames.includes(qName));
+    // 「天然鯛SP」のように末尾に規格の「SP」が付いていても対応表の呼び方として扱う
+    const qBase = qName.replace(/SP$/i, '');
+    const alias = CERTAIN_ALIASES.find((a) => a.lineNames.includes(qName) || a.lineNames.includes(qBase));
     if (alias) {
       // 対応表に載っている呼び方は、対応先の原稿品目だけを「確実」とし、
       // それ以外は通常の部分一致判定に任せる
