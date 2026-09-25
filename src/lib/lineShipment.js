@@ -310,7 +310,9 @@ export function parseLineShipmentText(rawText, referenceDateStr) {
     }
     // 2026-09-25 追加（kento指示）: 「受注 00018831」「出力: 9/25 19:22　森岡　旨味フーズ」は
     // システムの管理用の行なので、位置に関係なく読み飛ばす（品目にも備考にもしない）。
-    if (/^受注\s*[0-9０-９]+\s*$/.test(line) || /^出力\s*[:：]/.test(line)) {
+    // 受注番号・出力日時・担当者名は毎回違うので、「受注」＋番号で始まる行と、「出力」＋日付で始まる行を
+    // 丸ごと読み飛ばす（コロンの有無、全角数字、区切りの空白の違いも吸収する）。
+    if (/^受注\s*[:：#＃]?\s*[0-9０-９]/.test(line) || /^出力\s*[:：]?\s*[0-9０-９]{1,2}\s*[\/／]/.test(line)) {
       if (dest) dest.awaitingPostPriceLine = false;
       continue;
     }

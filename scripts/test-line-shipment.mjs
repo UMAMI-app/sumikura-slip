@@ -370,5 +370,13 @@ console.log('OK: line shipment parser correctly skips store/orderer/request-note
   // 改行が抜けて👤が前の行にくっついていても区切れる
   const glued = raw.replace('旨味フーズ\n👤 奥秋勝也', '旨味フーズ👤 奥秋勝也');
   assert.equal(parseLineShipmentText(glued, '2026-09-25').destinations.length, 2);
+  // 受注番号・出力日時・担当者名が違っても、コロン無し・全角でも読み飛ばす
+  const variant = raw
+    .replace('受注 00018831', '受注00020456')
+    .replace('出力: 9/25 19:22　森岡　旨味フーズ', '出力 10/3 8:05 浦島 旨味フーズ')
+    .replace('受注 00018837', '受注：００１２３')
+    .replace('出力: 9/25 19:22　森岡　旨味フーズ', '出力：１０／３ ７:４０　後藤');
+  const vRows = buildLineActualRows(parseLineShipmentText(variant, '2026-09-25').destinations, '2026-09-25', {});
+  assert.deepEqual(vRows.map((r) => [r.item_name, r.note]), [['マサバ', ''], ['サワラ明石', '半身']]);
   console.log('OK: 「👤 名前」形式・受注/出力行・確定済・日付と時間帯のくっつきに対応');
 }
