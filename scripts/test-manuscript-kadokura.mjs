@@ -74,3 +74,20 @@ console.log('OK: kadokura extraction basic cases pass');
   ]);
   console.log('OK: ◎丸ウニ・等級見出し・1行に価格まで書かれた品目・鮎は無視');
 }
+
+// 2026-09-25 追加（kento指示）: 空行の後の「・」なし1行（由良廣田丸）がハモの規格に混ざらない
+{
+  const { extractKadokuraManuscriptItems: ex } = await import('../src/lib/manuscriptKadokura.js');
+  const assert2 = (await import('node:assert')).default;
+  const raw = '・ハモ兵庫(淡路)\n800g前後 k6,000  1尾〜\n600g前後 k5,500  1尾〜\n400g前後 k5,000  1尾〜\n↑朝締めます！\n\n由良廣田丸 SP 約70g 1枚15,800\n由良廣田丸 並 約60g 1枚13,000\n';
+  const { items, skippedLines } = ex(raw);
+  assert2.deepEqual(skippedLines, []);
+  assert2.deepEqual(items.map((i) => [i.item_name, i.origin, i.spec, i.unit_price, i.price_unit]), [
+    ['ハモ', '兵庫', '800g前後', 6000, 'kg'],
+    ['ハモ', '兵庫', '600g前後', 5500, 'kg'],
+    ['ハモ', '兵庫', '400g前後', 5000, 'kg'],
+    ['由良廣田丸 SP 約70g', '', '', 15800, '枚'],
+    ['由良廣田丸 並 約60g', '', '', 13000, '枚'],
+  ]);
+  console.log('OK: 空行の後の品目名＋価格の1行は新しい品目（由良廣田丸がハモに混ざらない）');
+}

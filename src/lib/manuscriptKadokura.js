@@ -238,14 +238,29 @@ export function groupLines(rawText) {
     current.pendingLabel = null;
   }
 
+  let prevBlank = false;
   for (const line of lines) {
     if (line.length === 0) {
       if (current && current.variants.length > 0) {
         current.variants[current.variants.length - 1].blankAfter = true;
       }
       inKakouhin = false;
+      prevBlank = true;
       continue;
     }
+    // 2026-09-25 追加（kento指示）: 空行の後に「・」なしで「由良廣田丸 SP 約70g 1枚15,800」のような
+    // 品目名＋価格の1行が来た場合は、直前の品目（例: ハモ）の規格ではなく新しい品目として扱う。
+    // 判定: 空行の直後／かな・漢字3文字以上で始まる／数字（価格）を含む。
+    // 続けて同じ形の1行（「由良廣田丸 並 約60g 1枚13,000」）が来た場合も、それぞれ別の品目にする。
+    const looksOneLineItem = /^[\u3040-\u30ff\u4e00-\u9fff々]{3,}/.test(line) && /\d/.test(line);
+    if (looksOneLineItem && current && !inKakouhin
+      && ((prevBlank && current.variants.length > 0) || current.oneLine)) {
+      prevBlank = false;
+      startGroup(line);
+      current.oneLine = true;
+      continue;
+    }
+    prevBlank = false;
     pushLine(line);
   }
   if (current) groups.push(current);
@@ -371,14 +386,18 @@ export function extractKadokuraManuscriptItems(rawText) {
     // 2026-09-25 追加（kento指示）: 「・ちりめん山椒1k×1P ×3,000  1P〜」のように、品目名の行に
     // 規格と価格まで1行で書かれている場合は、最初の数字の手前で品目名と規格・価格に分けて読む。
     if (group.variants.length === 0) {
-      const one = (group.name || '').match(/^(\D+?)\s*(\d.*)$/);
+      const one = (group.name || '').match(/^([^\d]+?)\s*((?:約)?\d.*)$/);
       const parsedOne = one ? parseVariantLineRaw(one[2]) : null;
       if (parsedOne && parsedOne.priceOk && parsedOne.kind === 'single') {
         const r = resolveNameOrigin({ ...group, name: one[1] });
+        // ウニ（由良廣田丸など）は書き方が特殊なので、価格の手前までを全部品目名にする（規格は空欄）
+        const isUni = /ウニ|うに|雲丹|廣田丸|広田丸|与助|山由丸/.test(group.name);
         items.push({
-          item_name: normalizeName(r.itemName),
+          item_name: isUni
+            ? normalizeName([one[1].trim(), parsedOne.sizeText].filter(Boolean).join(' '))
+            : normalizeName(r.itemName),
           origin: r.pref || (group.forcedCategory === '加工品' ? '兵庫' : ''),
-          spec: parsedOne.sizeText,
+          spec: isUni ? '' : parsedOne.sizeText,
           unit_price: parsedOne.value,
           price_unit: parsedOne.unit,
           raw_line: group.name,
