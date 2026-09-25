@@ -1713,8 +1713,13 @@ const A4PreviewScaler = forwardRef(function A4PreviewScaler({ children }, ref) {
 //   - section="sameDay" は当日納品分だけ、section="takkyu" は宅急便分だけを表示する
 //     （宅急便は納品書全体の最後にまとめて記載するため。InvoiceDocument参照）
 function InvoicePreview({ invoiceDate, destination, lineItems, showTitle = true, showTotals = true, section, sectionHeader = null }) {
-  const sameDay = section === "takkyu" ? [] : lineItems.filter((li) => isSameDayCategory(li.delivery_category));
-  const takkyu = section === "sameDay" ? [] : lineItems.filter((li) => !isSameDayCategory(li.delivery_category));
+  // section: "air"=航空便のみ / "ground"=配送便のみ / "sameDay"=当日納品(航空便+配送便) / "takkyu"=宅急便のみ / 未指定=全部
+  const sameDay =
+    section === "takkyu" ? []
+    : section === "air" ? lineItems.filter((li) => li.delivery_category === "air")
+    : section === "ground" ? lineItems.filter((li) => li.delivery_category === "ground")
+    : lineItems.filter((li) => isSameDayCategory(li.delivery_category));
+  const takkyu = section === "sameDay" || section === "air" || section === "ground" ? [] : lineItems.filter((li) => !isSameDayCategory(li.delivery_category));
   const shownItems = [...sameDay, ...takkyu];
   const totals = buildInvoiceTotals(shownItems);
 
@@ -1795,7 +1800,11 @@ function InvoicePreview({ invoiceDate, destination, lineItems, showTitle = true,
 // 合計（商品合計・消費税・税込合計）は従来どおり当日納品＋宅急便をまとめて1回だけ表示する。
 // groups: [{ key, destination, lineItems }]
 function InvoiceDocument({ invoiceDate, groups, grandTotals }) {
-  const sameDayGroups = groups.filter((g) => g.lineItems.some((li) => isSameDayCategory(li.delivery_category)));
+  // 2026-09-25 変更（kento指示）: 航空便の店舗を先に並べ、配送便は「配送便」の区切り見出しの後に、
+  // 宅急便はさらにその後に便ごとの区切り見出しを付けて記載する。
+  const airGroups = groups.filter((g) => g.lineItems.some((li) => li.delivery_category === "air"));
+  const groundGroups = groups.filter((g) => g.lineItems.some((li) => li.delivery_category === "ground"));
+  const sameDayCount = airGroups.length + groundGroups.length;
 
   // 2026-09-23 変更（kento指示）: 宅急便は「発送日→着日」の組み合わせごとに区切り、
   // 見出しを「宅急便 9/23(水)→9/24(木)」の形にする。中1日かかる便（例: 9/23(水)→9/25(金)）
@@ -1831,16 +1840,35 @@ function InvoiceDocument({ invoiceDate, groups, grandTotals }) {
       <div style={{ flex: 1, borderTop: "2px dashed #666" }} />
     </div>
   );
+  const groundDivider = (
+    <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "14px 0 4px", fontSize: 14.4, fontWeight: 700, color: "#333" }}>
+      <div style={{ flex: 1, borderTop: "2px dashed #666" }} />
+      <span>配送便</span>
+      <div style={{ flex: 1, borderTop: "2px dashed #666" }} />
+    </div>
+  );
   return (
     <>
-      {sameDayGroups.map((g, idx) => (
+      {airGroups.map((g, idx) => (
         <InvoicePreview
-          key={`s-${g.key}`}
+          key={`a-${g.key}`}
           invoiceDate={invoiceDate}
           destination={g.destination}
           lineItems={g.lineItems}
-          section="sameDay"
+          section="air"
           showTitle={idx === 0}
+          showTotals={false}
+        />
+      ))}
+      {groundGroups.map((g, idx) => (
+        <InvoicePreview
+          key={`g-${g.key}`}
+          invoiceDate={invoiceDate}
+          destination={g.destination}
+          lineItems={g.lineItems}
+          section="ground"
+          showTitle={airGroups.length === 0 && idx === 0}
+          sectionHeader={idx === 0 ? groundDivider : null}
           showTotals={false}
         />
       ))}
@@ -1852,7 +1880,7 @@ function InvoiceDocument({ invoiceDate, groups, grandTotals }) {
             destination={st.destination}
             lineItems={st.lineItems}
             section="takkyu"
-            showTitle={sameDayGroups.length === 0 && pi === 0 && si === 0}
+            showTitle={sameDayCount === 0 && pi === 0 && si === 0}
             sectionHeader={si === 0 ? takkyuDivider(pair) : null}
             showTotals={false}
           />
