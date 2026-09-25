@@ -74,4 +74,6 @@ const taiMs = [
 ];
 assert.equal(pickCertainCandidate({ item_name: '天然鯛SP', size_hint: '2k' }, taiMs)?.id, 't2');
 assert.equal(pickCertainCandidate({ item_name: '真鯛', actual_weight: 1.2, quantity: 1 }, taiMs)?.id, 't1');
+// 登録済みの地名（明石）は照合時だけ兵庫と同じ産地として扱う
+assert.equal(pick({ item_name: 'ハモ', spec: '850g', origin: '明石' }), 'h800');
 console.log('OK: 確実な候補のみデフォルト紐付け／天然鯛系→活天然タイSP／船名一致／原稿検索');

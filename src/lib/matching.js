@@ -1,3 +1,4 @@
+import { originAliases } from './origins.js';
 // LINE実績データの品目と、原稿(manuscript_items)の候補を突合するロジック。
 // AIは使わず、単純な文字列一致・部分一致・正規化一致 + 規格/産地ボーナスで
 // 候補を自動で絞り込み、最終的な確定はユーザーが行う
@@ -99,9 +100,12 @@ function gramsDistance(range, other) {
 }
 
 function originEq(a, b) {
-  const x = normalizeName(a);
-  const y = normalizeName(b);
-  return !!x && !!y && (x.includes(y) || y.includes(x));
+  // 「明石」と「兵庫」のように、登録済みの地名はその都道府県と同じ産地として照合する（origins.js）
+  return originAliases(a).some((x0) => originAliases(b).some((y0) => {
+    const x = normalizeName(x0);
+    const y = normalizeName(y0);
+    return !!x && !!y && (x.includes(y) || y.includes(x));
+  }));
 }
 
 // 「確実なもの」だけを返す（無ければnull）。LINE実績データ確定時のデフォルト紐付けに使う。
@@ -194,7 +198,7 @@ export function rankManuscriptCandidates(lineItem, manuscriptItems) {
 
     let bonus = 0;
     if (qSpec && mSpec && qSpec === mSpec) bonus += 2;
-    if (qOrigin && mOrigin && qOrigin === mOrigin) bonus += 1;
+    if (qOrigin && mOrigin && originEq(lineItem.origin, mi.origin)) bonus += 1;
 
     scored.push({ item: mi, tier, score: tier * 10 + bonus });
   }

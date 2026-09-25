@@ -35,6 +35,7 @@
 // 今後実データでフォーマットのズレが見つかった場合は、このファイルの正規表現を調整すればよい。
 
 import { ORIGIN_NAMES } from './manuscriptKadokura.js';
+import { LOCAL_ORIGIN_NAMES } from './origins.js';
 import { guessPurchasePriceUnit, guessQuantityUnit, forcedUnitForName } from './priceUnitGuess.js';
 
 const CATEGORY_MAP = [
@@ -148,6 +149,7 @@ function resolveDate(month, day, referenceDateStr) {
   return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
 
+
 // 「赤ムツ(600g) 2本」のような品目行を、品目名／規格 or 産地／数量／単位に分解する。
 // 括弧の中身がORIGIN_NAMES（都道府県等）に含まれていれば産地、そうでなければ規格（サイズ）として扱う
 // （shippingList.jsのsplitOriginFromNameと同じ考え方）。
@@ -208,6 +210,14 @@ function parseItemNameLine(rawLine) {
       else kept.push(tok);
     });
     s = kept.join(' ');
+  }
+
+  // 2026-09-25 追加（kento指示・方式A）: 「サワラ明石」のように品目名に市町村名・漁港名などの
+  // 産地が入っている場合は、品目名はそのまま残し、産地（origin）としても記録する
+  // （チェック画面の［産地］表示・原稿との照合に使う）。地名は書き換えない（明石→兵庫にはしない）。
+  if (!origin) {
+    const local = LOCAL_ORIGIN_NAMES.find((n) => s.includes(n));
+    if (local) origin = local;
   }
 
   // サイズ表記は削除して size_hint に退避する（規格・品目名末尾のどちらでも）

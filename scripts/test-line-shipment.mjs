@@ -363,6 +363,7 @@ console.log('OK: line shipment parser correctly skips store/orderer/request-note
     destinations.map((d) => [d.destinationName, d.category, d.deliveryDate, d.deliveryNote]),
     [['悠々', 'ground', '2026-09-25', '午前中'], ['嘉多妻', 'air', '2026-09-25', '14時〜16時']]
   );
+  assert.equal(rows[1].origin, '明石'); // 登録済みの地名は品目名に残したまま産地としても記録（書き換えない）
   assert.deepEqual(rows.map((r) => [r.destination, r.item_name, r.quantity, r.actual_weight, r.purchase_price, r.sell_price, r.note]), [
     ['悠々', 'マサバ', 2, 2.45, 3300, 3800, ''],
     ['嘉多妻', 'サワラ明石', null, 1.65, 4800, 6600, '半身'],
