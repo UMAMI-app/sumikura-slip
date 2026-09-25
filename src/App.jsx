@@ -1075,7 +1075,7 @@ function LineActualPaste({ date, manuscriptItems, manuscriptItemById }) {
         const certain = isShippingRowName(it.item_name)
           ? null
           : pickCertainCandidate(
-              { item_name: it.item_name, spec: it.spec, origin: it.origin, size_hint: it.size_hint, actual_weight: it.actual_weight, quantity: it.quantity, partial: it.partial },
+              { item_name: it.item_name, spec: it.spec, origin: it.origin, size_hint: it.size_hint, actual_weight: it.actual_weight, quantity: it.quantity, partial: it.partial, no_piece_weight: it.no_piece_weight },
               manuscriptItems
             );
         return {

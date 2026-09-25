@@ -113,8 +113,8 @@ console.log('OK: line shipment parser correctly skips store/orderer/request-note
 
   const hanhan = destinations[1];
   assert.equal(hanhan.destinationName, '半々（ｶ)ｼﾞｭｳｲﾁ）');
-  assert.deepEqual(hanhan.items.map((it) => it.item_name), ['サワラ', '極上ハモ']);
-  assert.equal(hanhan.items[0].note, '肩身(骨なし)'); // 「肩身(骨なし)」が品目化されていた不具合
+  assert.deepEqual(hanhan.items.map((it) => it.item_name), ['サワラ 肩身', '極上ハモ']); // 2026-09-25: 半身・肩身・片身は品目名の後ろへ
+  assert.equal(hanhan.items[0].note, '骨なし'); // 「肩身(骨なし)」が品目化されていた不具合
   assert.deepEqual(
     { spec: hanhan.items[1].spec, qty: hanhan.items[1].quantity, unit: hanhan.items[1].quantity_unit },
     { spec: '', qty: 1, unit: '本' }
@@ -130,13 +130,13 @@ console.log('OK: line shipment parser correctly skips store/orderer/request-note
 
   const wanoshoku = destinations[3];
   assert.equal(wanoshoku.destinationName, '和の食いがらし');
-  assert.deepEqual(wanoshoku.items.map((it) => it.item_name), ['天然鯛', 'スマカツオ']);
+  assert.deepEqual(wanoshoku.items.map((it) => it.item_name), ['天然鯛', 'スマカツオ 半身']);
   assert.equal(wanoshoku.items[0].note, '2kg以下の場合は2枚‼️'); // ⚠️マーク付きの備考は従来通り拾える
 
   const shinozaki = destinations[4];
   assert.equal(shinozaki.destinationName, '篠崎　政考様');
-  assert.deepEqual(shinozaki.items.map((it) => it.item_name), ['カツオ']);
-  assert.equal(shinozaki.items[0].note, '半身 / ‼️今回個人伝票になります。金額分かり次第教えてください！！'); // 「今回個人伝票」が品目化されていた不具合
+  assert.deepEqual(shinozaki.items.map((it) => it.item_name), ['カツオ 半身']);
+  assert.equal(shinozaki.items[0].note, '‼️今回個人伝票になります。金額分かり次第教えてください！！'); // 「今回個人伝票」が品目化されていた不具合
 
   console.log('OK: free-text request lines right after 仕入／売値 are captured as notes, not new items (real reported blocks)');
 }
@@ -164,12 +164,12 @@ console.log('OK: line shipment parser correctly skips store/orderer/request-note
   assert.equal(warnings.length, 0);
   const yokoi = destinations[0];
   // 「送料」という品目名自体がどの品目にも含まれない・備考にも現れないことを確認する。
-  assert.deepEqual(yokoi.items.map((it) => it.item_name), ['カツオ', '極上ハモ']);
+  assert.deepEqual(yokoi.items.map((it) => it.item_name), ['カツオ', '極上ハモ 肩身']);
   assert.equal(yokoi.items.some((it) => (it.note || '').includes('送料')), false);
   const katsuo = yokoi.items.find((it) => it.item_name === 'カツオ');
   assert.equal(katsuo.note, ''); // 仕入の直後に備考なしで送料が来ても、送料自体は備考に入らない
-  const hamo = yokoi.items.find((it) => it.item_name === '極上ハモ');
-  assert.equal(hamo.note, '肩身'); // 送料の手前にある本当の備考は従来通り拾う
+  const hamo = yokoi.items.find((it) => it.item_name === '極上ハモ 肩身');
+  assert.equal(hamo.note, ''); // 肩身は品目名へ移動（2026-09-25） // 送料の手前にある本当の備考は従来通り拾う
   console.log('OK: 送料 is never registered as an item and never leaks into any note text');
 }
 
@@ -187,9 +187,9 @@ console.log('OK: line shipment parser correctly skips store/orderer/request-note
   const { destinations, warnings } = parseLineShipmentText(raw, '2026-09-25');
   assert.equal(warnings.length, 0);
   const kataduma = destinations[0];
-  assert.deepEqual(kataduma.items.map((it) => it.item_name), ['サワラ', 'メヒカリ銚子']); // メヒカリ銚子が備考に巻き込まれない
-  const sawara = kataduma.items.find((it) => it.item_name === 'サワラ');
-  assert.equal(sawara.note, '半身'); // 部位ワードは備考へ（2026-09-23）
+  assert.deepEqual(kataduma.items.map((it) => it.item_name), ['サワラ 半身', 'メヒカリ銚子']); // メヒカリ銚子が備考に巻き込まれない
+  const sawara = kataduma.items.find((it) => it.item_name === 'サワラ 半身');
+  assert.equal(sawara.note, ''); // 部位ワードは備考へ（2026-09-23）
 // // 売値の内容はテキストの備考ではなく、下のsell_priceで確認する
   assert.equal(sawara.sell_price, 4500); // 「売値記載あるものは反応してほしい」: 数値として保持する
   const mehikari = kataduma.items.find((it) => it.item_name === 'メヒカリ銚子');
@@ -306,7 +306,7 @@ console.log('OK: line shipment parser correctly skips store/orderer/request-note
   const rows = buildLineActualRows(destinations, '2026-09-19', {});
   const got = rows.map((r) => [r.item_name, r.quantity, r.quantity_unit, r.note, r.size_hint]);
   assert.deepEqual(got, [
-    ['サワラ', null, '', '半身', ''],
+    ['サワラ 半身', 1, '本', '', ''], // 半身は品目名へ・数量は1本
     ['淡路アコウ', 1, '本', '', '600g'],          // サイズ削除・処理系（腹出し・鱗とり）は備考に残さない
     ['カツオ', null, '', '背1/4', ''],
     ['ハモ', 1, '本', '', '850g'],
@@ -366,7 +366,7 @@ console.log('OK: line shipment parser correctly skips store/orderer/request-note
   assert.equal(rows[1].origin, '明石'); // 登録済みの地名は品目名に残したまま産地としても記録（書き換えない）
   assert.deepEqual(rows.map((r) => [r.destination, r.item_name, r.quantity, r.actual_weight, r.purchase_price, r.sell_price, r.note]), [
     ['悠々', 'マサバ', 2, 2.45, 3300, 3800, ''],
-    ['嘉多妻', 'サワラ明石', null, 1.65, 4800, 6600, '半身'],
+    ['嘉多妻', 'サワラ明石 半身', 1, 1.65, 4800, 6600, ''],
   ]);
   // 改行が抜けて👤が前の行にくっついていても区切れる
   const glued = raw.replace('旨味フーズ\n👤 奥秋勝也', '旨味フーズ👤 奥秋勝也');
@@ -378,6 +378,19 @@ console.log('OK: line shipment parser correctly skips store/orderer/request-note
     .replace('受注 00018837', '受注：００１２３')
     .replace('出力: 9/25 19:22　森岡　旨味フーズ', '出力：１０／３ ７:４０　後藤');
   const vRows = buildLineActualRows(parseLineShipmentText(variant, '2026-09-25').destinations, '2026-09-25', {});
-  assert.deepEqual(vRows.map((r) => [r.item_name, r.note]), [['マサバ', ''], ['サワラ明石', '半身']]);
+  assert.deepEqual(vRows.map((r) => [r.item_name, r.note]), [['マサバ', ''], ['サワラ明石 半身', '']]);
   console.log('OK: 「👤 名前」形式・受注/出力行・確定済・日付と時間帯のくっつきに対応');
+}
+
+// 2026-09-25 追加（kento指示）: 塩水雲丹は pc、半身・肩身・片身は品目名の後ろ＋数量1本
+{
+  const raw = '👤 浦島一樹\n角倉商店\n→\n悠々\n🚚 発送\n9/25\n📦 納品\n9/25午前中\n配達🚛\n塩水雲丹\n仕入 ¥3,500\n了解\n塩水ウニ 2枚\n仕入 ¥3,500\n了解\nブリ\n2.1kg\n仕入 ¥2,000\n片身\nマダイ\n1.2kg\n仕入 ¥3,000\n';
+  const rows = buildLineActualRows(parseLineShipmentText(raw, '2026-09-25').destinations, '2026-09-25', {});
+  assert.deepEqual(rows.map((r) => [r.item_name, r.quantity, r.quantity_unit, r.note]), [
+    ['塩水雲丹', 1, 'pc', '了解'],
+    ['塩水ウニ', 2, 'pc', '了解'], // 原文に「枚」とあっても塩水ウニはpc
+    ['ブリ 片身', 1, '本', ''],
+    ['マダイ', 1, '本', ''],
+  ]);
+  console.log('OK: 塩水雲丹はpc／半身・肩身・片身は品目名の後ろ＋数量1本');
 }

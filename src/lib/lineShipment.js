@@ -84,6 +84,9 @@ function findPartialWords(text) {
   return ((text || '').match(PARTIAL_RE_G) || []).map((w) => w.replace(/\s+/g, '').replace(/[１-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0)).replace('／', '/'));
 }
 
+// 2026-09-25 追加（kento指示）: 部位ワードのうち、備考ではなく品目名の後ろに付けるもの
+const NAME_PARTIAL_WORDS = ['半身', '肩身', '片身'];
+
 // 2026-09-23 追加（kento指示・7回目）: 送料のあたりに書かれる配送元・配送業者のワード。
 // ブロックのどこに出てきても品目にはせず、一つ上（直前）の実品目の備考に記載する。
 // （以前の「弘茂丸」専用ルールをこのリストに統合。「弘茂丸配送」「弘茂丸配達」も弘茂丸で反応する）
@@ -290,6 +293,27 @@ export function parseLineShipmentText(rawText, referenceDateStr) {
       // 部位ワード（半身・1/4 等）があれば、数量を空欄にしてワードを備考の先頭に記載する
       dest.items.forEach((it) => {
         findPartialWords(it.note).forEach((w) => { if (!it.partialWords.includes(w)) it.partialWords.push(w); });
+        // 2026-09-25 変更（kento指示）: 「半身」「肩身」「片身」は備考ではなく品目名の後ろに
+        // スペースを空けて記載する（例:「サワラ 半身」）。数量は他の品目と同じく、記載が無ければ
+        // 「1本」をデフォルトにする（buildLineActualRows側）。備考からはそのワードを取り除く。
+        const toName = it.partialWords.filter((w) => NAME_PARTIAL_WORDS.includes(w));
+        if (toName.length > 0) {
+          it.noPieceWeight = true; // 半身等は「目方÷数量＝1本あたり」にならないので原稿照合の目方判定に使わない
+          it.item_name = [it.item_name, ...toName].filter(Boolean).join(' ');
+          it.partialWords = it.partialWords.filter((w) => !toName.includes(w));
+          let note = it.note || '';
+          toName.forEach((w) => { note = note.split(w).join(''); });
+          note = note
+            .split(' / ')
+            .map((part) => {
+              const t = part.replace(/[（(]\s*[)）]/g, '').trim();
+              const pw = t.match(/^[（(]([^)）]+)[)）]$/);
+              return pw ? pw[1].trim() : t;
+            })
+            .filter(Boolean)
+            .join(' / ');
+          it.note = note;
+        }
         if (it.partialWords.length > 0) {
           it.partial = true;
           it.quantity = null;
@@ -611,6 +635,7 @@ export function buildLineActualRows(destinations, orderDate, defaultUnitMap = {}
         // 以下2つはDBには保存しない（確定時の原稿紐付け判定用）
         size_hint: it.size_hint || '',
         partial: !!it.partial,
+        no_piece_weight: !!it.noPieceWeight,
         actual_weight: it.actual_weight,
         actual_weight_unit: it.actual_weight_unit || (it.actual_weight != null ? 'kg' : ''),
         purchase_price: it.purchase_price,

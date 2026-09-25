@@ -128,7 +128,7 @@ export function pickCertainCandidate(lineItem, manuscriptItems) {
   // LINE側の1本あたりの重さ: 品目名から外したサイズ表記(size_hint) → 規格・品目名 →
   // 実際の目方÷数量（半身等の部位発注は1本あたりが分からないので使わない）の順で使う。
   let lineGrams = parseGramsRange(`${lineItem.size_hint || ''} ${lineItem.spec || ''} ${lineItem.item_name || ''}`);
-  if (!lineGrams && !lineItem.partial && Number(lineItem.actual_weight) > 0 && Number(lineItem.quantity) > 0) {
+  if (!lineGrams && !lineItem.partial && !lineItem.no_piece_weight && Number(lineItem.actual_weight) > 0 && Number(lineItem.quantity) > 0) {
     const g = (Number(lineItem.actual_weight) * 1000) / Number(lineItem.quantity);
     lineGrams = [g, g];
   }

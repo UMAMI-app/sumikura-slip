@@ -17,7 +17,7 @@
 const UNI_RE = /ウニ|うに|雲丹|廣田丸|広田丸|与助丸|山由丸/;
 
 const NAME_UNIT_RULES = [
-  { re: /塩水ウニ/, unit: 'pc' },
+  { re: /塩水(?:ウニ|うに|雲丹)/, unit: 'pc' }, // 2026-09-25: 塩水雲丹・塩水うにも対象（kento指示）
   { re: /鮮魚セット/, unit: '式' },
   { re: UNI_RE, unit: '枚' },
   { re: /サンマ|秋刀魚/, unit: '本' },
@@ -55,7 +55,8 @@ export function guessQuantityUnit(itemName) {
 // 「塩水ウニ」を含む品目だけは対象外（従来どおり、原文の単位 → 無ければ「pc」）。
 export function forcedUnitForName(itemName) {
   const name = itemName || '';
-  if (/塩水ウニ|塩水うに|塩水雲丹/.test(name)) return null;
+  // 2026-09-25 変更（kento指示）: 塩水ウニ・塩水雲丹・塩水うには、原文の単位に関係なく必ず「pc」
+  if (/塩水(?:ウニ|うに|雲丹)/.test(name)) return 'pc';
   if (UNI_RE.test(name)) return '枚';
   return null;
 }
