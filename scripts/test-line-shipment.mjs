@@ -108,8 +108,8 @@ console.log('OK: line shipment parser correctly skips store/orderer/request-note
 
   const nishioka = destinations[0];
   assert.equal(nishioka.destinationName, '鮨にし岡');
-  assert.deepEqual(nishioka.items.map((it) => it.item_name), ['迷いガツオ']);
-  assert.equal(nishioka.items[0].note, '腹1/4 / バッチリなものお願いします'); // 部位ワードは備考へ
+  assert.deepEqual(nishioka.items.map((it) => it.item_name), ['迷いガツオ 腹1/4']);
+  assert.equal(nishioka.items[0].note, 'バッチリなものお願いします'); // 部位ワードは品目名へ // 部位ワードは備考へ
 
   const hanhan = destinations[1];
   assert.equal(hanhan.destinationName, '半々（ｶ)ｼﾞｭｳｲﾁ）');
@@ -308,9 +308,9 @@ console.log('OK: line shipment parser correctly skips store/orderer/request-note
   assert.deepEqual(got, [
     ['サワラ 半身', 1, '本', '', ''], // 半身は品目名へ・数量は1本
     ['淡路アコウ', 1, '本', '', '600g'],          // サイズ削除・処理系（腹出し・鱗とり）は備考に残さない
-    ['カツオ', null, '', '背1/4', ''],
+    ['カツオ 背1/4', 1, '本', '', ''],
     ['ハモ', 1, '本', '', '850g'],
-    ['マナガツオ', null, '', '1/2 / キンコー', ''], // 「1/2本」の2本を数量と誤認しない
+    ['マナガツオ 1/2', 1, '本', 'キンコー', ''], // 「1/2本」の2本を数量と誤認しない
     ['赤ムツ', 2, '本', '近幸', '600g'],           // 「処理」を含む行は削除
     ['ヒラメ', 1, '本', 'ヤマトから', ''],
   ]);
@@ -321,7 +321,7 @@ console.log('OK: line shipment parser correctly skips store/orderer/request-note
 {
   const raw = '👤\n後藤聖和\n角倉商店\n→\n楽\n🚚 発送\n9/19\n📦 納品\n9/19午前中\n配達🚛\nブリ 背身\n1.2kg\n仕入 ¥2,000\nブリ 腹身\n1.1kg\n仕入 ¥2,000\nマグロ 1/3\n3.2kg\n仕入 ¥5,000\n';
   const rows = buildLineActualRows(parseLineShipmentText(raw, '2026-09-19').destinations, '2026-09-19', {});
-  assert.deepEqual(rows.map((r) => [r.item_name, r.quantity, r.note]), [['ブリ', null, '背身'], ['ブリ', null, '腹身'], ['マグロ', null, '1/3']]);
+  assert.deepEqual(rows.map((r) => [r.item_name, r.quantity, r.note]), [['ブリ 背身', 1, ''], ['ブリ 腹身', 1, ''], ['マグロ 1/3', 1, '']]);
   console.log('OK: 背身・腹身・1/3 も数量空欄＋備考');
 }
 

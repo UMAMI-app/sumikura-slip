@@ -84,9 +84,6 @@ function findPartialWords(text) {
   return ((text || '').match(PARTIAL_RE_G) || []).map((w) => w.replace(/\s+/g, '').replace(/[１-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0)).replace('／', '/'));
 }
 
-// 2026-09-25 追加（kento指示）: 部位ワードのうち、備考ではなく品目名の後ろに付けるもの
-const NAME_PARTIAL_WORDS = ['半身', '肩身', '片身'];
-
 // 2026-09-23 追加（kento指示・7回目）: 送料のあたりに書かれる配送元・配送業者のワード。
 // ブロックのどこに出てきても品目にはせず、一つ上（直前）の実品目の備考に記載する。
 // （以前の「弘茂丸」専用ルールをこのリストに統合。「弘茂丸配送」「弘茂丸配達」も弘茂丸で反応する）
@@ -296,7 +293,9 @@ export function parseLineShipmentText(rawText, referenceDateStr) {
         // 2026-09-25 変更（kento指示）: 「半身」「肩身」「片身」は備考ではなく品目名の後ろに
         // スペースを空けて記載する（例:「サワラ 半身」）。数量は他の品目と同じく、記載が無ければ
         // 「1本」をデフォルトにする（buildLineActualRows側）。備考からはそのワードを取り除く。
-        const toName = it.partialWords.filter((w) => NAME_PARTIAL_WORDS.includes(w));
+        // 2026-09-25 追加変更（kento指示）: 背身・腹身・1/2・1/3・1/4・背1/4・腹1/4 なども含め、
+        // 部位ワードは全部品目名の後ろに付ける（数量は記載が無ければ1本）。
+        const toName = it.partialWords.slice();
         if (toName.length > 0) {
           it.noPieceWeight = true; // 半身等は「目方÷数量＝1本あたり」にならないので原稿照合の目方判定に使わない
           it.item_name = [it.item_name, ...toName].filter(Boolean).join(' ');
