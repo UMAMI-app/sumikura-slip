@@ -454,7 +454,7 @@ function DateHeader({ title, date, onDateChange, children }) {
       <h2 style={{ ...h2(), marginBottom: 0 }}>{title}</h2>
       <input
         type="date"
-        style={{ ...inputStyle(), ...(date !== today ? { borderColor: T.warn, color: T.warn } : {}) }}
+        style={{ ...underlineInputStyle(), fontSize: 15, ...(date !== today ? { borderBottomColor: T.warn, color: T.warn } : {}) }}
         value={date}
         onChange={(e) => { if (e.target.value && onDateChange) onDateChange(e.target.value); }}
       />
@@ -2084,6 +2084,29 @@ function HistoryPanel() {
   const [endDate, setEndDate] = useState(todayStr());
   const [invoices, setInvoices] = useState([]);
   const [listLineItems, setListLineItems] = useState([]);
+  // 2026-09-25 追加（kento指示）: 見出しの横に今月の合計利益（「○月の売り上げ」）を出す
+  const [monthProfit, setMonthProfit] = useState(null);
+  const [monthProfitTick, setMonthProfitTick] = useState(0);
+  const thisMonth = todayStr().slice(0, 7); // 'YYYY-MM'
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [y, m] = thisMonth.split("-").map(Number);
+        const last = new Date(y, m, 0).getDate();
+        const invs = await db.list("invoices", `?invoice_date=gte.${thisMonth}-01&invoice_date=lte.${thisMonth}-${String(last).padStart(2, "0")}&select=id`);
+        if (invs.length === 0) { if (!cancelled) setMonthProfit(0); return; }
+        const lis = await db.list(
+          "invoice_line_items",
+          `?invoice_id=in.(${invs.map((i) => i.id).join(",")})&select=amount,sell_price,unit_price,price_unit,weight,quantity`
+        );
+        if (!cancelled) setMonthProfit(buildProfitTotals(lis).profit);
+      } catch (e) {
+        if (!cancelled) setMonthProfit(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [thisMonth, monthProfitTick, invoices]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
 
@@ -2108,14 +2131,17 @@ function HistoryPanel() {
     try {
       const rows = await db.list(
         "invoices",
-        `?invoice_date=gte.${startDate}&invoice_date=lte.${endDate}&order=invoice_date.desc,destination.asc`
+        `?invoice_date=gte.${startDate}&invoice_date=lte.${endDate}&order=invoice_date.asc,destination.asc`
       );
       setInvoices(rows);
-      // 2026-09-23 追加（kento指示）: 一覧の各日付に利益も出すため、明細の金額・売値だけまとめて読む
+      // 2026-09-23 追加（kento指示）: 一覧の各日付に利益も出すため、明細をまとめて読む。
+      // 2026-09-25 修正: 以前は金額・売値しか読んでいなかったため、自動売値が「単価」ではなく
+      // 「行の金額」で掛け率を判定してしまい、kg単価1万円以上でも金額が1万円未満の行が1.15倍に
+      // なっていた（例: 0.8kg×k12,000=9,600円 → 1.15倍）。単価・単位・目方・数量も読むようにした。
       if (rows.length > 0) {
         try {
           const ids = rows.map((r) => r.id).join(",");
-          const lis = await db.list("invoice_line_items", `?invoice_id=in.(${ids})&select=id,invoice_id,amount,sell_price`);
+          const lis = await db.list("invoice_line_items", `?invoice_id=in.(${ids})&select=id,invoice_id,amount,sell_price,unit_price,price_unit,weight,quantity`);
           setListLineItems(lis);
         } catch (e) {
           setListLineItems([]);
@@ -2204,6 +2230,7 @@ function HistoryPanel() {
         prev.map((g) => ({ ...g, items: g.items.map((it) => (it.id === itemId ? { ...it, sell_price: value } : it)) }))
       );
       setListLineItems((prev) => prev.map((li) => (li.id === itemId ? { ...li, sell_price: value } : li)));
+      setMonthProfitTick((n) => n + 1);
     } catch (e) {
       setErr("売値の保存に失敗しました: " + (e.message || e));
     } finally {
@@ -2259,14 +2286,20 @@ function HistoryPanel() {
 
   return (
     <div>
-      <h2 style={h2()}>納品書履歴</h2>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
+        <h2 style={{ ...h2(), marginBottom: 0 }}>納品書履歴</h2>
+        <span style={{ fontSize: 13, color: T.textMain }}>
+          {Number(thisMonth.slice(5, 7))}月の売り上げ：
+          <span style={{ fontWeight: 700, color: T.green, marginLeft: 4 }}>{monthProfit == null ? "…" : `利益 ${fmtYen(monthProfit)}`}</span>
+        </span>
+      </div>
       {err && <div style={{ color: T.warn, marginBottom: 12 }}>{err}</div>}
 
       <section style={card()}>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <input type="date" style={inputStyle()} value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+          <input type="date" style={{ ...underlineInputStyle(), fontSize: 15 }} value={startDate} onChange={(e) => setStartDate(e.target.value)} />
           <span>〜</span>
-          <input type="date" style={inputStyle()} value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+          <input type="date" style={{ ...underlineInputStyle(), fontSize: 15 }} value={endDate} onChange={(e) => setEndDate(e.target.value)} />
           <button style={btn(true)} onClick={search}>検索</button>
         </div>
       </section>

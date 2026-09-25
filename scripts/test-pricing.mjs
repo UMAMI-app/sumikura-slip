@@ -52,4 +52,6 @@ import('../src/lib/pricing.js').then(({ computeSellUnitPrice }) => {
 assert.equal(computeSellPrice({ amount: 4830, unit_price: 4200, price_unit: 'kg', weight: 1.15 }), 5635); // 4,900×1.15kg
 assert.equal(computeSellPrice({ amount: 29600, unit_price: 14800, price_unit: '枚', quantity: 2 }), 32600); // 14,800×1.1=16,280→16,300 ×2枚
 assert.equal(computeSellPrice({ amount: 5000, unit_price: 5000, price_unit: 'kg', weight: null }), 5800); // 目方なし→行金額で計算
+// kg単価1万円以上なら、行の金額が1万円未満でも1.1倍（0.8kg×k12,000=9,600円 → 売値単価13,200 → 10,560円）
+assert.equal(computeSellPrice({ amount: 9600, unit_price: 12000, price_unit: 'kg', weight: 0.8 }), 10560);
 console.log('OK: pricing/tax logic matches spec test cases (4,5,6,7,8,9)');
