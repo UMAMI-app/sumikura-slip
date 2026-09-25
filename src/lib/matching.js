@@ -41,6 +41,12 @@ const CERTAIN_ALIASES = [
     matchManuscript: (mName) => mName.includes('活天然タイ'),
   },
   {
+    // kento指示（2026-09-25）: 「活〆マダイ」は原稿の「天然タイ」（活天然タイ等）に該当する（規格は問わない）。
+    // 規格違いが複数ある場合は、目方が近いもの等の条件で絞れた時だけ確定する。
+    lineNames: ['活〆マダイ', '活〆真鯛'],
+    matchManuscript: (mName) => mName.includes('天然タイ'),
+  },
+  {
     // kento指示（2026-09-23）: アジ → マアジ は確定でよい
     lineNames: ['アジ', '鯵', 'あじ', 'まあじ'],
     matchManuscript: (mName) => mName === 'マアジ',
