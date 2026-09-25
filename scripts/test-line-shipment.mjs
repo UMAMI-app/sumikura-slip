@@ -351,3 +351,24 @@ console.log('OK: line shipment parser correctly skips store/orderer/request-note
   assert.deepEqual(rows.map((r) => [r.item_name, r.origin, r.quantity]), [['氷じめアジ', '兵庫', 1], ['真鯛', '長崎県産', 2], ['赤ムツ', '島根', 1]]);
   console.log('OK: スペース区切り・カッコ書きの産地は品目名から外して origin に保持');
 }
+
+// 2026-09-25 追加（kento指示）: 「👤 発注者名」が同じ行・ブロック間の空行なし・受注/出力の管理行・
+// 「確定済」ステータス・「9/2514時〜16時」のように日付と時間帯がくっついた形式
+{
+  const raw = '👤 浦島一樹\n未確定\n角倉商店\n→\n悠々\n🚚 発送\n9/25\n📦 納品\n9/25午前中\n自社配送🚚\nマサバ　2本\n2.45 ㎏\n仕入 ¥3,300\n売値 ¥3,800\n受注 00018831\n出力: 9/25 19:22　森岡　旨味フーズ\n👤 奥秋勝也\n確定済\n角倉商店\n→\n嘉多妻\n🚚 発送\n9/25\n📦 納品\n9/2514時〜16時\n航空便✈️\nサワラ明石　半身\n1.65 ㎏\n仕入 ¥4,800\n売値 ¥6,600\n送料\n1 \n受注 00018837\n出力: 9/25 19:22　森岡　旨味フーズ';
+  const { destinations, warnings } = parseLineShipmentText(raw, '2026-09-25');
+  assert.equal(warnings.length, 0);
+  const rows = buildLineActualRows(destinations, '2026-09-25', {});
+  assert.deepEqual(
+    destinations.map((d) => [d.destinationName, d.category, d.deliveryDate, d.deliveryNote]),
+    [['悠々', 'ground', '2026-09-25', '午前中'], ['嘉多妻', 'air', '2026-09-25', '14時〜16時']]
+  );
+  assert.deepEqual(rows.map((r) => [r.destination, r.item_name, r.quantity, r.actual_weight, r.purchase_price, r.sell_price, r.note]), [
+    ['悠々', 'マサバ', 2, 2.45, 3300, 3800, ''],
+    ['嘉多妻', 'サワラ明石', null, 1.65, 4800, 6600, '半身'],
+  ]);
+  // 改行が抜けて👤が前の行にくっついていても区切れる
+  const glued = raw.replace('旨味フーズ\n👤 奥秋勝也', '旨味フーズ👤 奥秋勝也');
+  assert.equal(parseLineShipmentText(glued, '2026-09-25').destinations.length, 2);
+  console.log('OK: 「👤 名前」形式・受注/出力行・確定済・日付と時間帯のくっつきに対応');
+}

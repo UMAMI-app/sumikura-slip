@@ -1510,7 +1510,15 @@ function buildLineItemsForInvoice(lines) {
       // 2026-09-25 追加変更（kento指示・5回目）: LINE実績データに「売値」が明記されていれば
       // そのままinvoice_line_items.sell_priceに引き継ぐ（履歴ページの利益計算にそのまま使われる。
       // 未記載ならnullのままで、従来通りHistoryPanel側の自動計算・手入力に委ねる）。
-      sell_price: line.sell_price != null ? Number(line.sell_price) : null,
+      // 2026-09-25 修正: LINEの「売値 ¥3,800」は仕入と同じく単価（kg単価など）なので、
+      // 納品書明細（履歴の利益計算は行の売値合計として扱う）には「売値単価×目方（kg単価）／×数量」
+      // に換算して引き継ぐ。目方・数量が無くて換算できない場合は引き継がない（自動計算に任せる）。
+      sell_price: (() => {
+        if (line.sell_price == null || line.sell_price === "") return null;
+        const unit = Number(line.sell_price);
+        const basis = priceUnit === "kg" ? actualWeight : actualQuantity;
+        return basis > 0 ? Math.round(unit * basis) : null;
+      })(),
       // 2026-09-23 追加（kento指示）: 納品書では備考を品目の右隣に「(備考)」で表示する。
       // invoice_line_itemsには備考の列が無いため、保存時(saveGroup)には除外し、
       // 履歴ページではline_actual_item_id経由でLINE実績データの備考を読み直す。

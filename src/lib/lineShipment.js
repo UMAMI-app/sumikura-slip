@@ -128,7 +128,7 @@ function looksLikeItemContinuationLine(line) {
 // （destinationNameが確定するまでの間は）該当すれば読み飛ばす、という二段構えにする。
 const KNOWN_ORDERER_NAMES = ['浦島一樹', '後藤聖和', '見富剛', '奥秋勝也', '岡本研人', '森岡十夢', '旨味フーズ'];
 const KNOWN_SUPPLIER_NAMES = ['角倉商店'];
-const KNOWN_STATUS_VALUES = ['未確定'];
+const KNOWN_STATUS_VALUES = ['未確定', '確定済', '確定済み'];
 function isKnownHeaderLine(line) {
   return KNOWN_ORDERER_NAMES.includes(line) || KNOWN_SUPPLIER_NAMES.includes(line) || KNOWN_STATUS_VALUES.includes(line);
 }
@@ -240,8 +240,11 @@ function isShippingFeeContinuationLine(line) {
 // rawText: LINEからコピーした出荷実績データの生テキスト（複数件貼り付け可）
 // referenceDateStr: アプリで選択されている日付('YYYY-MM-DD')。M/D表記の年を補うのに使う。
 export function parseLineShipmentText(rawText, referenceDateStr) {
+  // 2026-09-25 追加（kento指示）: 👤が行の途中にくっついて貼られる（改行が抜ける）ことがあるため、
+  // 👤の前で必ず改行して、👤を常にブロックの頭として扱えるようにする。
   const lines = rawText
     .replace(/\r\n/g, '\n')
+    .replace(/👤/g, '\n👤')
     .split('\n')
     .map((l) => l.trim())
     .filter((l) => l.length > 0);
@@ -297,10 +300,18 @@ export function parseLineShipmentText(rawText, referenceDateStr) {
     const line = lines[i];
     const nextLine = lines[i + 1];
 
-    if (line === '👤') {
+    if (line.startsWith('👤')) {
       flushDest();
       dest = newDest();
-      dest.awaitingOrderer = true; // 「👤」を実際に見たときだけ、次の1行を発注者として読み飛ばす
+      // 「👤」だけの行なら次の1行が発注者名。「👤 浦島一樹」のように同じ行に発注者名が
+      // 付いている形式（2026-09-25 kento指示）では、この行で発注者名まで読み終えている。
+      dest.awaitingOrderer = line.replace('👤', '').trim() === '';
+      continue;
+    }
+    // 2026-09-25 追加（kento指示）: 「受注 00018831」「出力: 9/25 19:22　森岡　旨味フーズ」は
+    // システムの管理用の行なので、位置に関係なく読み飛ばす（品目にも備考にもしない）。
+    if (/^受注\s*[0-9０-９]+\s*$/.test(line) || /^出力\s*[:：]/.test(line)) {
+      if (dest) dest.awaitingPostPriceLine = false;
       continue;
     }
     if (!dest) {
@@ -346,7 +357,11 @@ export function parseLineShipmentText(rawText, referenceDateStr) {
       continue;
     }
     if (/^📦\s*納品/.test(line)) { dest.awaitingDeliveryDate = true; continue; }
-    if (dest.awaitingDeliveryDate && (m = line.match(/^(\d{1,2})\/(\d{1,2})(.*)$/))) {
+    // 「9/2514時〜16時」のように日付と時間帯がくっついていることがある。日が32以上になる読み方
+    // （例:「9/514時」を「9/51」と読んでしまう）場合は、日を1桁として読み直す。
+    if (dest.awaitingDeliveryDate && /^\d{1,2}\/\d/.test(line)) {
+      m = line.match(/^(\d{1,2})\/(\d{1,2})(.*)$/);
+      if (parseInt(m[2], 10) > 31) m = line.match(/^(\d{1,2})\/(\d)(.*)$/);
       dest.deliveryDate = resolveDate(parseInt(m[1], 10), parseInt(m[2], 10), referenceDateStr);
       dest.deliveryNote = (m[3] || '').trim();
       dest.awaitingDeliveryDate = false;
