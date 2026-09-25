@@ -54,3 +54,23 @@ console.log('OK: kadokura extraction basic cases pass');
   ]);
   console.log('OK: 由良ウニの船名（廣田丸・与助・与助丸・山由丸）を品目名に残す');
 }
+
+// 2026-09-25 追加（kento指示）: ◎丸ウニブロック・等級見出し（極大粒/大粒）・品目名行に価格まで書かれた行・鮎は無視
+{
+  const { extractKadokuraManuscriptItems: ex } = await import('../src/lib/manuscriptKadokura.js');
+  const assert2 = (await import('node:assert')).default;
+  const raw = '◎八幡浜のウニ\n愛媛,八幡浜赤雲丹　\n50g前後　\n   ・＠8,400\n\n◎北ウニNo.①\n（養殖）\nカネキ木村250ｇ\n【浜中養殖バフン】\n   ・＠25,500\n\n◎塩水ウニNo.①\n福士塩水雲丹【利尻島白】100g　\n   ・＠6,200\n\n・仙鳳趾ムキ牡蠣\n北海道,仙鳳趾\n（極大粒）\n500g入 1P 4,900  1P〜\n(大粒)\n500g入 1P 4,400  1P〜\n\n・活稚鮎 琵琶湖\n6g/230\n8g/250\n\n兵庫淡路島\n・ちりめん山椒1k×1P ×3,000  1P〜\n・上乾ちりめん5kgBOX k5,900  500g〜 極小\n・釜揚げしらす1k×1P k3,600  500g〜\n';
+  const { items, skippedLines } = ex(raw);
+  assert2.deepEqual(skippedLines, []);
+  assert2.deepEqual(items.map((i) => [i.item_name, i.origin, i.spec, i.unit_price, i.price_unit]), [
+    ['八幡浜のウニ', '愛媛', '愛媛,八幡浜赤雲丹 50g前後', 8400, '枚'],
+    ['北ウニNo.①', '', '（養殖） カネキ木村250ｇ 【浜中養殖バフン】', 25500, '枚'],
+    ['塩水ウニNo.①', '', '福士塩水雲丹【利尻島白】100g', 6200, 'pc'],
+    ['仙鳳趾ムキ牡蠣', '北海道', '極大粒 500g入', 4900, 'P'],
+    ['仙鳳趾ムキ牡蠣', '北海道', '大粒 500g入', 4400, 'P'],
+    ['ちりめん山椒', '兵庫', '1k×1P', 3000, 'P'],
+    ['上乾ちりめん', '兵庫', '5kgBOX', 5900, 'kg'],
+    ['釜揚げしらす', '兵庫', '1k×1P', 3600, 'kg'],
+  ]);
+  console.log('OK: ◎丸ウニ・等級見出し・1行に価格まで書かれた品目・鮎は無視');
+}

@@ -26,6 +26,7 @@
 //     （既存アプリ側もこれらは専用の組み立て関数を持つほど特殊な書式のため）。
 
 import { inferPriceUnit } from './manuscript.js';
+import { guessPurchasePriceUnit } from './priceUnitGuess.js';
 
 // ---- 産地（既存アプリ Kdk より移植） ----
 const PREFS = ['北海道','青森','岩手','宮城','秋田','山形','福島','茨城','栃木','群馬','埼玉','千葉','東京','神奈川',
@@ -210,6 +211,14 @@ export function groupLines(rawText) {
       return;
     }
 
+    // 2026-09-25 追加（kento指示）: 「（極大粒）」「(大粒)」のような等級の見出し行は、直前の規格の
+    // 補足ではなく「次に来る規格行」の見出しなので、次の規格行にくっつける。
+    const gradeM = line.match(/^[（(]([^)）]*)[)）]$/);
+    if (gradeM && /粒|極大|特大|^大$|^中$|^小$/.test(gradeM[1].trim())) {
+      current.pendingLabel = gradeM[1].trim();
+      return;
+    }
+
     if (/^[（(][^)）]*[)）]$/.test(line) && !/^\(SP\)$|^\(上\)$/.test(line) && current.variants.length > 0) {
       current.variants[current.variants.length - 1].extraNote = line.replace(/[()（）]/g, '');
       return;
@@ -225,7 +234,8 @@ export function groupLines(rawText) {
       return;
     }
 
-    current.variants.push({ raw: line, qty: null, extraNote: null });
+    current.variants.push({ raw: line, qty: null, extraNote: null, label: current.pendingLabel || null });
+    current.pendingLabel = null;
   }
 
   for (const line of lines) {
@@ -291,7 +301,12 @@ export function parseVariantLineRaw(raw) {
   if (m) {
     const before = m[1].replace(/×\s*$/, '').trim();
     const value = parseInt(m[2].replace(/,/g, ''), 10);
-    const unit = inferPriceUnit('', before, 'yen') || '';
+    let unit = inferPriceUnit('', before, 'yen') || '';
+    // 「1k×1P ×3,000」のように「×」の手前が「1P」「2枚」等で終わっていれば、それを単価の単位とみなす
+    if (!unit) {
+      const um = before.match(/\d*\s*(P|パック|枚|個|尾|本|杯)$/i);
+      if (um) unit = /^p$/i.test(um[1]) ? 'P' : um[1];
+    }
     return { kind: 'single', sizeText: before, value, unit, priceOk: true };
   }
 
@@ -325,13 +340,50 @@ export function extractKadokuraManuscriptItems(rawText) {
   const skippedLines = [];
 
   groups.forEach((group) => {
+    // 2026-09-25 追加（kento指示）: 鮎（稚鮎・活鮎など）は読み込まない（エラー一覧にも出さない）
+    if (/鮎/.test(group.name || '')) return;
+
+    // 2026-09-25 追加（kento指示）: 「◎北ウニNo.①」のような丸ウニ（◎）ブロックを読み込む。
+    //   品目名 = ◎の見出し（例: 北ウニNo.①）、規格 = 見出しと価格の間の行（銘柄・グラム・種類）、
+    //   単価 = 「・＠25,500」、単位 = ウニは枚（塩水ウニはpc）、産地 = 行の中の都道府県・国名。
+    if (group.isMaruUni && group.maruUniPrice != null) {
+      const detail = group.variants.map((v) => v.raw.trim()).filter(Boolean).join(' ');
+      const all = `${group.name} ${detail}`;
+      const pref = ORIGIN_NAMES.find((p) => all.includes(p)) || '';
+      items.push({
+        item_name: normalizeName(group.name.trim()),
+        origin: pref,
+        spec: detail,
+        unit_price: group.maruUniPrice,
+        price_unit: guessPurchasePriceUnit(all),
+        raw_line: `◎${group.name} / ${detail} / ＠${group.maruUniPrice}`,
+      });
+      return;
+    }
+
     // 由良ウニ・丸ウニ(◎)・宮津トリ貝は既存アプリ側も専用の組み立て関数を持つほど
     // 特殊な書式のため、自動抽出はせず要確認として一覧に出す（原稿価格なしで手動対応）
     if (group.isMaruUni || group.isMiyazu || (group.subVariants && group.subVariants.length > 0)) {
       skippedLines.push(`${group.name}（特殊フォーマットのため要手動確認）`);
       return;
     }
+    // 2026-09-25 追加（kento指示）: 「・ちりめん山椒1k×1P ×3,000  1P〜」のように、品目名の行に
+    // 規格と価格まで1行で書かれている場合は、最初の数字の手前で品目名と規格・価格に分けて読む。
     if (group.variants.length === 0) {
+      const one = (group.name || '').match(/^(\D+?)\s*(\d.*)$/);
+      const parsedOne = one ? parseVariantLineRaw(one[2]) : null;
+      if (parsedOne && parsedOne.priceOk && parsedOne.kind === 'single') {
+        const r = resolveNameOrigin({ ...group, name: one[1] });
+        items.push({
+          item_name: normalizeName(r.itemName),
+          origin: r.pref || (group.forcedCategory === '加工品' ? '兵庫' : ''),
+          spec: parsedOne.sizeText,
+          unit_price: parsedOne.value,
+          price_unit: parsedOne.unit,
+          raw_line: group.name,
+        });
+        return;
+      }
       if (group.name) skippedLines.push(`${group.name}（価格行なし）`);
       return;
     }
@@ -354,7 +406,8 @@ export function extractKadokuraManuscriptItems(rawText) {
         skippedLines.push(`${itemName} / ${v.raw}`);
         return;
       }
-      const rawLine = `${group.name} / ${v.raw}`;
+      const rawLine = `${group.name} / ${v.label ? `(${v.label}) ` : ''}${v.raw}`;
+      if (v.label) parsed.sizeText = [v.label, parsed.sizeText].filter(Boolean).join(' ');
       if (parsed.kind === 'dual') {
         parsed.parts.forEach((part) => {
           items.push({

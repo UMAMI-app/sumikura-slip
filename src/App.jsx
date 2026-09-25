@@ -244,6 +244,22 @@ function ManuscriptPanel({ date, onDateChange, items, loading, onSaved }) {
     });
   };
 
+  // 2026-09-25 追加（kento指示）: 自動で読めなかった行を、手動で品目として追加・修正できるようにする。
+  // skippedIdx を渡すと、その行を「読めなかった行」の一覧から外して、品目名の候補を入れた行を追加する。
+  const addManualItem = (skippedIdx = null) => {
+    setPreview((prev) => {
+      const skippedLines = prev.skippedLines.slice();
+      let raw = "";
+      if (skippedIdx != null) {
+        raw = skippedLines[skippedIdx] || "";
+        skippedLines.splice(skippedIdx, 1);
+      }
+      const nameGuess = raw.replace(/（[^）]*のため要手動確認）$|（価格行なし）$/, "").split(" / ")[0].trim();
+      const item = { item_name: nameGuess, origin: "", spec: "", unit_price: null, price_unit: "", raw_line: raw || "(手動追加)", manual: true };
+      return { ...prev, skippedLines, items: [...prev.items, item] };
+    });
+  };
+
   const removePreviewItem = (idx) => {
     setPreview((prev) => {
       const items = prev.items.slice();
@@ -263,7 +279,8 @@ function ManuscriptPanel({ date, onDateChange, items, loading, onSaved }) {
         source_filename: "角倉原稿(貼り付け)",
         raw_grid_text: preview.rawText,
       });
-      const rows = preview.items.map((it) => ({ ...it, batch_id: batch.id }));
+      // eslint-disable-next-line no-unused-vars
+      const rows = preview.items.map(({ manual, ...it }) => ({ ...it, batch_id: batch.id }));
       await db.insertMany("manuscript_items", rows);
       setPreview(null);
       setPasteText("");
@@ -330,7 +347,7 @@ function ManuscriptPanel({ date, onDateChange, items, loading, onSaved }) {
               </thead>
               <tbody>
                 {preview.items.map((it, idx) => (
-                  <tr key={idx}>
+                  <tr key={idx} style={it.manual ? { background: T.warnBg } : undefined}>
                     <td style={td()}><input style={{ ...inputStyle(), width: 110 }} value={it.item_name} onChange={(e) => updatePreviewItem(idx, { item_name: e.target.value })} /></td>
                     <td style={td()}><input style={{ ...inputStyle(), width: 70 }} value={it.origin} onChange={(e) => updatePreviewItem(idx, { origin: e.target.value })} /></td>
                     <td style={td()}><input style={{ ...inputStyle(), width: 70 }} value={it.spec} onChange={(e) => updatePreviewItem(idx, { spec: e.target.value })} /></td>
@@ -349,10 +366,20 @@ function ManuscriptPanel({ date, onDateChange, items, loading, onSaved }) {
               </tbody>
             </table>
           </div>
+          <div style={{ marginTop: 8 }}>
+            <button style={{ ...btn(), padding: "4px 10px", fontSize: 12 }} onClick={() => addManualItem(null)}>＋ 品目を手動で追加</button>
+          </div>
           {preview.skippedLines.length > 0 && (
-            <details style={{ marginTop: 8, fontSize: 12, color: T.textSub }}>
-              <summary>自動抽出できなかった行・特殊フォーマット（{preview.skippedLines.length}件、手動で確認してください）</summary>
-              <pre style={{ whiteSpace: "pre-wrap" }}>{preview.skippedLines.join("\n")}</pre>
+            <details open style={{ marginTop: 8, fontSize: 12, color: T.textSub }}>
+              <summary>自動抽出できなかった行・特殊フォーマット（{preview.skippedLines.length}件）— 「追加して修正」で上の表に入れて手入力できます</summary>
+              <div style={{ marginTop: 6 }}>
+                {preview.skippedLines.map((line, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0", borderBottom: `1px solid ${T.softBorder}` }}>
+                    <span style={{ flex: 1, whiteSpace: "pre-wrap" }}>{line}</span>
+                    <button style={{ ...btn(), padding: "2px 8px", fontSize: 11, flexShrink: 0 }} onClick={() => addManualItem(i)}>追加して修正</button>
+                  </div>
+                ))}
+              </div>
             </details>
           )}
           <div style={{ marginTop: 12 }}>
