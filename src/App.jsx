@@ -209,6 +209,25 @@ function inputStyle() {
 function underlineInputStyle() {
   return { padding: "4px 2px", border: "none", borderBottom: `1px solid ${T.border}`, borderRadius: 0, fontSize: 16, background: "transparent", color: T.textMain, outline: "none" };
 }
+// 見出しの横に置くカレンダー（下線のみ）。iPhoneの日付入力は独自の高さ・余白を持つため、
+// 見た目をリセットして高さと行の高さを揃え、見出しと上下中央で揃うようにする（2026-09-25）。
+function calendarInputStyle() {
+  return {
+    ...underlineInputStyle(),
+    fontSize: 15,
+    lineHeight: "22px",
+    height: 28,
+    padding: "2px 2px",
+    boxSizing: "border-box",
+    WebkitAppearance: "none",
+    appearance: "none",
+    display: "inline-flex",
+    alignItems: "center",
+    margin: 0,
+    verticalAlign: "middle",
+  };
+}
+
 function tabBtnStyle(active) {
   return {
     padding: "9px 4px",
@@ -451,10 +470,10 @@ function DateHeader({ title, date, onDateChange, children }) {
   const today = todayStr();
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
-      <h2 style={{ ...h2(), marginBottom: 0 }}>{title}</h2>
+      <h2 style={{ ...h2(), margin: 0, lineHeight: "28px" }}>{title}</h2>
       <input
         type="date"
-        style={{ ...underlineInputStyle(), fontSize: 15, ...(date !== today ? { borderBottomColor: T.warn, color: T.warn } : {}) }}
+        style={{ ...calendarInputStyle(), ...(date !== today ? { borderBottomColor: T.warn, color: T.warn } : {}) }}
         value={date}
         onChange={(e) => { if (e.target.value && onDateChange) onDateChange(e.target.value); }}
       />
@@ -2286,8 +2305,8 @@ function HistoryPanel() {
 
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
-        <h2 style={{ ...h2(), marginBottom: 0 }}>納品書履歴</h2>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
+        <h2 style={{ ...h2(), margin: 0, lineHeight: "28px" }}>納品書履歴</h2>
         <span style={{ fontSize: 13, color: T.textMain }}>
           {Number(thisMonth.slice(5, 7))}月の売り上げ：
           <span style={{ fontWeight: 700, color: T.green, marginLeft: 4 }}>{monthProfit == null ? "…" : `利益 ${fmtYen(monthProfit)}`}</span>
@@ -2295,14 +2314,12 @@ function HistoryPanel() {
       </div>
       {err && <div style={{ color: T.warn, marginBottom: 12 }}>{err}</div>}
 
-      <section style={card()}>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <input type="date" style={{ ...underlineInputStyle(), fontSize: 15 }} value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-          <span>〜</span>
-          <input type="date" style={{ ...underlineInputStyle(), fontSize: 15 }} value={endDate} onChange={(e) => setEndDate(e.target.value)} />
-          <button style={btn(true)} onClick={search}>検索</button>
-        </div>
-      </section>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 16 }}>
+        <input type="date" style={calendarInputStyle()} value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+        <span style={{ lineHeight: "28px" }}>〜</span>
+        <input type="date" style={calendarInputStyle()} value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+        <button style={btn(true)} onClick={search}>検索</button>
+      </div>
 
       <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
         <section style={{ ...card(), flex: "1 1 280px" }}>
