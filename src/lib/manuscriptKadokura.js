@@ -344,16 +344,17 @@ export function extractKadokuraManuscriptItems(rawText) {
     if (/鮎/.test(group.name || '')) return;
 
     // 2026-09-25 追加（kento指示）: 「◎北ウニNo.①」のような丸ウニ（◎）ブロックを読み込む。
-    //   品目名 = ◎の見出し（例: 北ウニNo.①）、規格 = 見出しと価格の間の行（銘柄・グラム・種類）、
-    //   単価 = 「・＠25,500」、単位 = ウニは枚（塩水ウニはpc）、産地 = 行の中の都道府県・国名。
+    //   ウニは書き方が特殊なので、価格（「・＠25,500」）の手前までに書かれていることを全部品目名にする
+    //   （例: 北ウニNo.① （養殖） カネキ木村250ｇ 【浜中養殖バフン】。規格は空欄）。kento指示 2026-09-25。
+    //   単位 = ウニは枚（塩水ウニはpc）、産地 = 行の中の都道府県・国名（データとして記録）。
     if (group.isMaruUni && group.maruUniPrice != null) {
       const detail = group.variants.map((v) => v.raw.trim()).filter(Boolean).join(' ');
       const all = `${group.name} ${detail}`;
       const pref = ORIGIN_NAMES.find((p) => all.includes(p)) || '';
       items.push({
-        item_name: normalizeName(group.name.trim()),
+        item_name: normalizeName(all.replace(/[\s　]+/g, ' ').trim()),
         origin: pref,
-        spec: detail,
+        spec: '',
         unit_price: group.maruUniPrice,
         price_unit: guessPurchasePriceUnit(all),
         raw_line: `◎${group.name} / ${detail} / ＠${group.maruUniPrice}`,

@@ -63,9 +63,9 @@ console.log('OK: kadokura extraction basic cases pass');
   const { items, skippedLines } = ex(raw);
   assert2.deepEqual(skippedLines, []);
   assert2.deepEqual(items.map((i) => [i.item_name, i.origin, i.spec, i.unit_price, i.price_unit]), [
-    ['八幡浜のウニ', '愛媛', '愛媛,八幡浜赤雲丹 50g前後', 8400, '枚'],
-    ['北ウニNo.①', '', '（養殖） カネキ木村250ｇ 【浜中養殖バフン】', 25500, '枚'],
-    ['塩水ウニNo.①', '', '福士塩水雲丹【利尻島白】100g', 6200, 'pc'],
+    ['八幡浜のウニ 愛媛,八幡浜赤雲丹 50g前後', '愛媛', '', 8400, '枚'],
+    ['北ウニNo.① （養殖） カネキ木村250ｇ 【浜中養殖バフン】', '', '', 25500, '枚'],
+    ['塩水ウニNo.① 福士塩水雲丹【利尻島白】100g', '', '', 6200, 'pc'],
     ['仙鳳趾ムキ牡蠣', '北海道', '極大粒 500g入', 4900, 'P'],
     ['仙鳳趾ムキ牡蠣', '北海道', '大粒 500g入', 4400, 'P'],
     ['ちりめん山椒', '兵庫', '1k×1P', 3000, 'P'],
