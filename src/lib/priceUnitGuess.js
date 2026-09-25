@@ -60,3 +60,18 @@ export function forcedUnitForName(itemName) {
   if (UNI_RE.test(name)) return '枚';
   return null;
 }
+
+// 2026-09-25 追加（kento指示）: タコ・イカ類は数量の単位を必ず「杯」にする（原文に別の単位が
+// 書かれていても）。対象: マダコ・タコ・蛸・たこ・真蛸・まだこ・真ダコ・真だこ・イカ・剣先イカ・
+// ヤリイカ・コウイカ・新イカ・ハリイカ・アオリイカ・いか（それぞれを含む品目名）。
+// 「イカナゴ」「いかなご」は魚（イカではない）なので対象外。
+// 単価の単位（kg単価など）は変えない（数量の数え方だけ）。
+const TAKO_IKA_RE = /タコ|蛸|たこ|ダコ|だこ|イカ|いか/;
+const NOT_IKA_RE = /イカナゴ|いかなご/;
+export function forcedQuantityUnitForName(itemName) {
+  const name = itemName || '';
+  const uni = forcedUnitForName(name);
+  if (uni) return uni;
+  if (TAKO_IKA_RE.test(name.replace(NOT_IKA_RE, ''))) return '杯';
+  return null;
+}

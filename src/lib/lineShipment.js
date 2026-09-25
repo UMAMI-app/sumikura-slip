@@ -36,7 +36,7 @@
 
 import { ORIGIN_NAMES } from './manuscriptKadokura.js';
 import { LOCAL_ORIGIN_NAMES } from './origins.js';
-import { guessPurchasePriceUnit, guessQuantityUnit, forcedUnitForName } from './priceUnitGuess.js';
+import { guessPurchasePriceUnit, guessQuantityUnit, forcedUnitForName, forcedQuantityUnitForName } from './priceUnitGuess.js';
 
 const CATEGORY_MAP = [
   { re: /航空便/, category: 'air' },
@@ -630,7 +630,7 @@ export function buildLineActualRows(destinations, orderDate, defaultUnitMap = {}
         quantity: it.partial ? null : (it.quantity != null ? it.quantity : 1),
         // 廣田丸は原文の明記単位（pc等）より優先して必ず「枚」（forcedUnitForName）。
         // 「塩水ウニ(廣田丸)」のように括弧内（spec/origin）に書かれた場合も対象にする。
-        quantity_unit: it.partial ? '' : (forcedUnitForName([it.origin, it.item_name, it.spec].filter(Boolean).join(' ')) || it.quantity_unit || guessQuantityUnit(it.item_name)),
+        quantity_unit: it.partial ? '' : (forcedQuantityUnitForName([it.origin, it.item_name, it.spec].filter(Boolean).join(' ')) || it.quantity_unit || guessQuantityUnit(it.item_name)),
         // 以下2つはDBには保存しない（確定時の原稿紐付け判定用）
         size_hint: it.size_hint || '',
         partial: !!it.partial,

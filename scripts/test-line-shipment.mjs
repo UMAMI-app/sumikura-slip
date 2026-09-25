@@ -394,3 +394,17 @@ console.log('OK: line shipment parser correctly skips store/orderer/request-note
   ]);
   console.log('OK: 塩水雲丹はpc／半身・肩身・片身は品目名の後ろ＋数量1本');
 }
+
+// 2026-09-25 追加（kento指示）: タコ・イカ類は数量の単位を必ず「杯」（単価の単位は変えない）
+{
+  const names = ['マダコ', 'タコ', '蛸', 'たこ', '真蛸', 'まだこ', '真ダコ', '真だこ', 'イカ', '剣先イカ', 'ヤリイカ', 'コウイカ', '新イカ', 'ハリイカ', 'アオリイカ', 'いか'];
+  const body = names.map((n, i) => `${n}${i === 0 ? ' 2本' : ''}\n1.2kg\n仕入 ¥2,000\n`).join('') + 'イカナゴ\n1kg\n仕入 ¥1,000\n';
+  const raw = '👤 浦島一樹\n角倉商店\n→\n悠々\n🚚 発送\n9/25\n📦 納品\n9/25午前中\n配達🚛\n' + body;
+  const rows = buildLineActualRows(parseLineShipmentText(raw, '2026-09-25').destinations, '2026-09-25', {});
+  assert.deepEqual(rows.map((r) => r.item_name), [...names, 'イカナゴ']);
+  rows.slice(0, names.length).forEach((r) => assert.equal(r.quantity_unit, '杯', r.item_name));
+  assert.equal(rows[0].quantity, 2); // 「2本」と書かれていても数量2・単位は杯
+  assert.equal(rows[0].purchase_price_unit, 'kg'); // 単価の単位はそのまま
+  assert.equal(rows[names.length].quantity_unit, '本'); // イカナゴは対象外
+  console.log('OK: タコ・イカ類は数量の単位が杯（イカナゴは対象外）');
+}
