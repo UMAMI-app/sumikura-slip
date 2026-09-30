@@ -1375,7 +1375,7 @@ function LineActualPaste({ date, manuscriptItems, manuscriptItemById }) {
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12 }}>
                   <span>
                     {r.item_name}{r.spec ? `(${r.spec})` : ""}{" "}
-                    {r.origin ? <span style={{ color: T.textSub }}>［{r.origin}］</span> : null}{r.origin ? " " : ""}
+                    {r.origin && !(r.item_name || "").includes(r.origin) ? <span style={{ color: T.textSub }}>［{r.origin}］ </span> : null}
                     {r.quantity != null && r.quantity !== "" ? `${r.quantity}${r.quantity_unit || ""} ` : ""}
                     {r.actual_weight != null && r.actual_weight !== "" ? `${r.actual_weight}${r.actual_weight_unit || "kg"} ` : ""}
                     {isShippingRowName(r.item_name)
