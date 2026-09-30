@@ -331,14 +331,14 @@ console.log('OK: line shipment parser correctly skips store/orderer/request-note
   const { destinations, warnings } = parseLineShipmentText(raw, '2026-09-23');
   assert.equal(warnings.length, 0);
   assert.deepEqual(destinations.map((d) => [d.destinationName, d.category, d.items.map((it) => it.item_name)]), [
-    ['お料理宮本', 'ground', ['韓国ハモ', '氷じめアジ']],
+    ['お料理宮本', 'ground', ['韓国ハモ', '氷じめアジ 兵庫']],
     ['銀座うち山', 'takkyu', ['カマス']], // 「株式会社」は削除
   ]);
   // 知らない発注元名でも「→」で新しいブロックになり、発注元名は品目に残らない
   const raw2 = raw.replace('\n\n角倉商店\n', '\n\n別の魚屋\n');
   const d2 = parseLineShipmentText(raw2, '2026-09-23').destinations;
   assert.deepEqual(d2.map((d) => [d.destinationName, d.items.map((it) => it.item_name)]), [
-    ['お料理宮本', ['韓国ハモ', '氷じめアジ']],
+    ['お料理宮本', ['韓国ハモ', '氷じめアジ 兵庫']],
     ['銀座うち山', ['カマス']],
   ]);
   console.log('OK: 👤なしで「角倉商店→店舗名」が続いても店舗ごとに分かれる');
@@ -348,7 +348,7 @@ console.log('OK: line shipment parser correctly skips store/orderer/request-note
 {
   const raw = '角倉商店\n→\nお料理宮本\n🚚 発送\n9/23\n📦 納品\n9/23午前中\n配達🚛\n氷じめアジ　兵庫\n0.44 ㎏\n仕入 ¥4,200\n真鯛 長崎県産 2本\n2.4kg\n仕入 ¥3,000\n赤ムツ(島根)\n1.1kg\n仕入 ¥5,000\n';
   const rows = buildLineActualRows(parseLineShipmentText(raw, '2026-09-23').destinations, '2026-09-23', {});
-  assert.deepEqual(rows.map((r) => [r.item_name, r.origin, r.quantity]), [['氷じめアジ', '兵庫', 1], ['真鯛', '長崎県産', 2], ['赤ムツ', '島根', 1]]);
+  assert.deepEqual(rows.map((r) => [r.item_name, r.origin, r.quantity]), [['氷じめアジ 兵庫', '兵庫', 1], ['真鯛 長崎県産', '長崎県産', 2], ['赤ムツ', '島根', 1]]);
   console.log('OK: スペース区切り・カッコ書きの産地は品目名から外して origin に保持');
 }
 
@@ -407,4 +407,12 @@ console.log('OK: line shipment parser correctly skips store/orderer/request-note
   assert.equal(rows[0].purchase_price_unit, 'kg'); // 単価の単位はそのまま
   assert.equal(rows[names.length].quantity_unit, '本'); // イカナゴは対象外
   console.log('OK: タコ・イカ類は数量の単位が杯（イカナゴは対象外）');
+}
+
+// 2026-09-30 追加（kento指示）: 「タイ」「鯛」「天タイ」は「天然タイ」と表記（部位ワードは後ろに付く）
+{
+  const raw = '👤 浦島一樹\n角倉商店\n→\n悠々\n🚚 発送\n9/30\n📦 納品\n9/30午前中\n配達🚛\nタイ\n2.1kg\n仕入 ¥3,000\n鯛 半身\n1.0kg\n仕入 ¥3,000\n天タイ\n1.8kg\n仕入 ¥3,000\n真鯛\n1.2kg\n仕入 ¥2,000\n';
+  const rows = buildLineActualRows(parseLineShipmentText(raw, '2026-09-30').destinations, '2026-09-30', {});
+  assert.deepEqual(rows.map((r) => r.item_name), ['天然タイ', '天然タイ 半身', '天然タイ', '真鯛']);
+  console.log('OK: タイ・鯛・天タイは天然タイと表記');
 }

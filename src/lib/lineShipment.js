@@ -201,15 +201,14 @@ function parseItemNameLine(rawLine) {
   // 2026-09-23 追加（kento指示）: 「氷じめアジ　兵庫」「真鯛 長崎県産」のように、品目名の後ろに
   // スペース区切りで産地だけが書かれている場合は、品目名からは外して origin に保持する
   // （品目名・納品書には出さず、チェック画面でのみ表示。原稿との紐付けにも使う）。
+  // 2026-09-30 変更（kento指示）: 「品目名　産地」の形は、産地を品目名から外さずにそのまま残す
+  // （産地としても記録はする＝チェック画面の［産地］表示・原稿照合用）。
   if (!origin && s.includes(' ')) {
     const tokens = s.split(' ').filter(Boolean);
-    const kept = [tokens[0]];
     tokens.slice(1).forEach((tok) => {
       const hit = !origin && ORIGIN_NAMES.find((p) => new RegExp(`^${p}(?:都|道|府|県)?(?:産)?$`).test(tok));
       if (hit) origin = tok;
-      else kept.push(tok);
     });
-    s = kept.join(' ');
   }
 
   // 2026-09-25 追加（kento指示・方式A）: 「サワラ明石」のように品目名に市町村名・漁港名などの
@@ -229,7 +228,11 @@ function parseItemNameLine(rawLine) {
     s = s.slice(0, tm.index);
   }
 
-  return { item_name: s.trim(), origin, spec, quantity, quantity_unit, size_hint, partialWords };
+  // 2026-09-30 追加（kento指示）: 品目名が「タイ」「鯛」「天タイ」だけの場合は「天然タイ」と表記する
+  let itemName = s.trim();
+  if (['タイ', '鯛', '天タイ'].includes(itemName)) itemName = '天然タイ';
+
+  return { item_name: itemName, origin, spec, quantity, quantity_unit, size_hint, partialWords };
 }
 
 // 「送料」の見出し行。カッコ書きの補足（例:「送料(箱代含む)」）は許すが、それ以外の自由文

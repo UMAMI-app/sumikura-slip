@@ -78,7 +78,7 @@ const BLANK_NEW_LINE = {
 };
 
 export default function App() {
-  const [tab, setTab] = useState("orders");
+  const [tab, setTab] = useState("manuscript"); // 2026-09-30: 発注ページ削除に伴い、最初は原稿ページ
   // 2026-09-23 変更（kento指示）: 過去の納品書を作ることがあるため、「原稿」「発注」「チェック」
   // 「納品書」の各ページにカレンダーを置く（デフォルトは当日）。4ページとも同じ日付を共有し、
   // どのページでカレンダーを変えても他のページの日付も同じになる。
@@ -137,14 +137,10 @@ export default function App() {
   return (
     <div style={{ fontFamily: "system-ui, -apple-system, 'Hiragino Sans', sans-serif", background: T.bg, minHeight: "100vh", color: T.textMain }}>
       <header style={{ padding: "10px 16px 14px", borderBottom: `1px solid ${T.border}` }}>
-        <span style={{ fontSize: 12, color: T.textSub }}>
-          {selectedDate}（{weekdayJa(selectedDate)}）{" "}
-          {manuscriptBatches.length > 0 && `原稿${manuscriptBatches.length}件読込済`}
-        </span>
-        <nav style={{ display: "flex", gap: 6, marginTop: 8 }}>
+        {/* 2026-09-30: 画面上部の「日付（曜日）原稿N件読込済」表示は削除（kento指示） */}
+        <nav style={{ display: "flex", gap: 6 }}>
           {[
             ["manuscript", "原稿"],
-            ["orders", "発注"],
             ["pricecheck", "チェック"],
             ["invoice", "納品書"],
             ["history", "履歴"],
@@ -177,14 +173,7 @@ export default function App() {
             onSaved={() => reloadAll(selectedDate)}
           />
         )}
-        {tab === "orders" && (
-          <OrdersPanel
-            date={selectedDate}
-            onDateChange={setSelectedDate}
-            orderLines={orderLines}
-            onChanged={() => loadOrderLines(selectedDate).catch((e) => setGlobalError(e.message || String(e)))}
-          />
-        )}
+        {/* 2026-09-30: 発注ページは削除（kento指示）。OrdersPanel本体のコードは残してあるが画面からは呼ばない */}
         {tab === "pricecheck" && (
           <PriceCheckPanel
             date={selectedDate}
@@ -337,7 +326,6 @@ function ManuscriptPanel({ date, onDateChange, items, loading, onSaved }) {
         <textarea
           value={pasteText}
           onChange={(e) => setPasteText(e.target.value)}
-          placeholder={"・白甘鯛\n和歌山\n1.5kg k12,000\n\n・メックリアジ兵庫(二見)\n1.5kg k1,200"}
           rows={10}
           style={{ width: "100%", fontFamily: "monospace", fontSize: 16, padding: 8, border: `1px solid ${T.border}`, borderRadius: 6 }}
         />
@@ -438,10 +426,10 @@ function ManuscriptPanel({ date, onDateChange, items, loading, onSaved }) {
                 {items.map((it) => (
                   <tr key={it.id}>
                     <td style={td()}>{it.item_name}</td>
-                    <td style={td()}>{it.origin}</td>
+                    <td style={{ ...td(), whiteSpace: "nowrap" }}>{it.origin}</td>
                     <td style={td()}>{it.spec}</td>
                     <td style={td()}>{fmtYen(it.unit_price)}</td>
-                    <td style={td()}>{it.price_unit}</td>
+                    <td style={{ ...td(), whiteSpace: "nowrap" }}>{it.price_unit}</td>
                   </tr>
                 ))}
               </tbody>

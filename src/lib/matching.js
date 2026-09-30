@@ -30,7 +30,7 @@ const NAME_SYNONYM_GROUPS = [
 // 今後同じような「この呼び方は確実にこの原稿品目」という対応が増えたら、ここに追記する。
 const CERTAIN_ALIASES = [
   {
-    lineNames: ['天然鯛', 'タイ', '天タイ', '鯛'],
+    lineNames: ['天然鯛', 'タイ', '天タイ', '鯛', '天然タイ'], // 天然タイ: LINE解析でタイ・鯛・天タイを天然タイ表記にしたため（2026-09-30）
     // 原稿側: 品目名に「活天然タイ」を含み、品目名＋規格に「SP」を含むもの
     matchManuscript: (mName, mSpec) => mName.includes('活天然タイ') && /SP/i.test(mName + mSpec),
   },
