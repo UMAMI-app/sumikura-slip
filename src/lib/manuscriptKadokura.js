@@ -139,7 +139,12 @@ function formatArrowNote(text) {
 
 // ---- 行のグルーピング（既存アプリ Kdk.groupLines より移植） ----
 export function groupLines(rawText) {
-  const lines = rawText.replace(/\r\n/g, '\n').split('\n').map((l) => l.trim());
+  // 2026-10-01 追加（kento指示）: 品目の頭の記号は「・」「･」以外に「•」「●」「·」などが使われることがある
+  // （原稿をコピーした環境によって変わる）。どれも「・」とみなして品目の区切りとして扱う。
+  const lines = rawText
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .map((l) => l.trim().replace(/^[•●·∙◦‧⋅]\s*/, '・'));
   const groups = [];
   let current = null;
   let inKakouhin = false;
@@ -339,7 +344,10 @@ export function parseVariantLineRaw(raw) {
   if (m && /\d/.test(m[2])) {
     const before = m[1].trim();
     const value = parseInt(m[2].replace(/,/g, ''), 10);
-    return { kind: 'single', sizeText: before, value, unit: 'kg', priceOk: true };
+    // 「11,000cs」のように数字の直後に単位が付いていれば、その単位を使う（kgと決めつけない）
+    const um = (m[3] || '').match(/^(cs|ケース|箱|P|パック|枚|個|尾|本|杯)/i);
+    const unit = um ? (/^cs$/i.test(um[1]) ? 'cs' : /^p$/i.test(um[1]) ? 'P' : um[1]) : 'kg';
+    return { kind: 'single', sizeText: before, value, unit, priceOk: true };
   }
 
   return { kind: 'none', sizeText: s, priceOk: false };

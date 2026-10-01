@@ -91,3 +91,20 @@ console.log('OK: kadokura extraction basic cases pass');
   ]);
   console.log('OK: 空行の後の品目名＋価格の1行は新しい品目（由良廣田丸がハモに混ざらない）');
 }
+
+// 2026-10-01 追加（kento指示）: 品目の頭が「•」でも区切りとして認識する／「11,000cs」はcs単価
+{
+  const { extractKadokuraManuscriptItems: ex } = await import('../src/lib/manuscriptKadokura.js');
+  const assert2 = (await import('node:assert')).default;
+  const raw = '・オオズワイ北海道噴火湾\n5入3k前後 11,000cs  1cs〜\n5入3k前後 1杯2,300  1杯〜\n\n•マサバ和歌山紀州御坊\n800g前後 k4,800  活〆  1尾〜\n•マサバ兵庫垂水\n500g-600g k3,000  1尾〜\n\n•マアジ千葉(黄金アジ)\n400g-500g k3,000  1尾～\n';
+  const { items, skippedLines } = ex(raw);
+  assert2.deepEqual(skippedLines, []);
+  assert2.deepEqual(items.map((i) => [i.item_name, i.origin, i.spec, i.unit_price, i.price_unit]), [
+    ['オオズワイ', '北海道', '5入3k前後', 11000, 'cs'],
+    ['オオズワイ', '北海道', '5入3k前後', 2300, '杯'],
+    ['マサバ', '和歌山', '800g前後', 4800, 'kg'],
+    ['マサバ', '兵庫', '500g-600g', 3000, 'kg'],
+    ['マアジ', '千葉', '400g-500g', 3000, 'kg'],
+  ]);
+  console.log('OK: 「•」も品目の区切り／cs単価');
+}
