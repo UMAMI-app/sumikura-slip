@@ -51,6 +51,17 @@ const CERTAIN_ALIASES = [
     lineNames: ['アジ', '鯵', 'あじ', 'まあじ'],
     matchManuscript: (mName) => mName === 'マアジ',
   },
+  // 2026-10-02 追加（kento指示）: LINE側の呼び方 → 原稿の表記。
+  // prefix: true のものは、LINE側の品目名がその呼び方で「始まって」いれば反応する
+  // （例:「天然鯛 半身」「真鯖 兵庫」「キンメ 2本」のように後ろに部位・産地が付いていても拾う）。
+  {
+    lineNames: ['天然鯛', '天然タイ'],
+    prefix: true,
+    matchManuscript: (mName, mSpec) => mName.includes('活天然タイ') && /SP/i.test(mName + mSpec),
+  },
+  { lineNames: ['キンメ'], prefix: true, matchManuscript: (mName) => mName.includes('キンメ鯛') },
+  { lineNames: ['真鯖', '真サバ'], prefix: true, matchManuscript: (mName) => mName.includes('マサバ') },
+  { lineNames: ['毛蟹'], prefix: true, matchManuscript: (mName) => mName.includes('毛ガニ') },
 ];
 
 // 由良ウニの船名。LINE側・原稿側の両方に同じ船名があれば候補にする（tier 2）。
@@ -190,7 +201,9 @@ export function rankManuscriptCandidates(lineItem, manuscriptItems) {
     let tier = 0;
     // 「天然鯛SP」のように末尾に規格の「SP」が付いていても対応表の呼び方として扱う
     const qBase = qName.replace(/SP$/i, '');
-    const alias = CERTAIN_ALIASES.find((a) => a.lineNames.includes(qName) || a.lineNames.includes(qBase));
+    const alias = CERTAIN_ALIASES.find(
+      (a) => a.lineNames.includes(qName) || a.lineNames.includes(qBase) || (a.prefix && a.lineNames.some((n) => qName.startsWith(n)))
+    );
     if (alias) {
       // 対応表に載っている呼び方は、対応先の原稿品目だけを「確実」とし、
       // それ以外は通常の部分一致判定に任せる

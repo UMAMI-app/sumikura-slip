@@ -80,4 +80,23 @@ assert.equal(pick({ item_name: 'ハモ', spec: '850g', origin: '明石' }), 'h80
 assert.deepEqual(rankManuscriptCandidates({ item_name: '活〆マダイ' }, ms).filter((c) => c.tier === 4).map((c) => c.item.id).sort(), ['tai-jo', 'tai-sp']);
 assert.equal(pickCertainCandidate({ item_name: '活〆マダイ', size_hint: '2k' }, taiMs)?.id, 't2');
 assert.equal(pickCertainCandidate({ item_name: '活〆マダイ' }, [{ id: 'x', item_name: '天然タイ', origin: '', spec: '' }])?.id, 'x');
+// 2026-10-02: キンメ→キンメ鯛、真鯖/真サバ→マサバ、毛蟹→毛ガニ、天然鯛→活天然タイSP（後ろに部位・産地が付いても）
+{
+  const m2 = [
+    { id: 'kinme', item_name: 'キンメ鯛', origin: '千葉', spec: '1k前後' },
+    { id: 'saba', item_name: 'マサバ', origin: '兵庫', spec: '500g-600g' },
+    { id: 'kegani', item_name: '毛ガニ', origin: '北海道', spec: '500g' },
+    { id: 'tai-sp', item_name: '活天然タイ', origin: '兵庫', spec: 'SP' },
+    { id: 'tai-jo', item_name: '活天然タイ', origin: '兵庫', spec: '上' },
+  ];
+  const c = (n) => pickCertainCandidate({ item_name: n }, m2)?.id ?? null;
+  assert.equal(c('キンメ'), 'kinme');
+  assert.equal(c('キンメ 半身'), 'kinme');
+  assert.equal(c('真鯖'), 'saba');
+  assert.equal(c('真サバ 兵庫'), 'saba');
+  assert.equal(c('毛蟹'), 'kegani');
+  assert.equal(c('天然鯛'), 'tai-sp');
+  assert.equal(c('天然鯛 半身'), 'tai-sp');
+  assert.equal(c('タイラギ'), null); // 「タイ」で始まるだけの別の品目には反応しない
+}
 console.log('OK: 確実な候補のみデフォルト紐付け／天然鯛系→活天然タイSP／船名一致／原稿検索');
