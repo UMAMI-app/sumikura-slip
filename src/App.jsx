@@ -2345,18 +2345,26 @@ function HistoryPanel() {
         <button style={btn(true)} onClick={search}>検索</button>
       </div>
       {/* 2026-10-02 追加（kento指示）: 検索した期間の合計を、検索欄のすぐ下にも目立つ形で表示する */}
-      {!loading && dateGroups.length > 0 && (
-        <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap", margin: "-6px 0 14px", fontSize: 14 }}>
-          <span style={{ color: T.textSub }}>
-            {startDate === endDate ? `${formatMD(startDate)}` : `${formatMD(startDate)}〜${formatMD(endDate)}`}の合計
-          </span>
-          <span style={{ fontWeight: 700 }}>{fmtYen(dateGroups.reduce((sum, g) => sum + (g.subtotal || 0), 0))}</span>
-          <span style={{ fontWeight: 700, color: T.green }}>利益 {fmtYen(dateGroups.reduce((sum, g) => sum + (g.profit || 0), 0))}</span>
+      {/* 2026-10-02 変更（kento指示）: 期間（複数日）を選んだときだけ、検索欄の下の中央に色付きで目立たせて表示。
+          開始日と終了日が同じ日（例: 10/2〜10/2）のときは表示しない。 */}
+      {!loading && dateGroups.length > 0 && startDate !== endDate && (
+        <div style={{ display: "flex", justifyContent: "center", margin: "-4px 0 16px" }}>
+          <div
+            style={{
+              display: "flex", alignItems: "baseline", justifyContent: "center", gap: 12, flexWrap: "wrap",
+              padding: "10px 18px", borderRadius: 999, background: "#e6f2ea", border: "1px solid #9cc9ad",
+              color: "#1f5e3a", fontSize: 14,
+            }}
+          >
+            <span>{formatMD(startDate)}〜{formatMD(endDate)}の合計</span>
+            <span style={{ fontWeight: 700 }}>{fmtYen(dateGroups.reduce((sum, g) => sum + (g.subtotal || 0), 0))}</span>
+            <span style={{ fontWeight: 700, fontSize: 16 }}>利益 {fmtYen(dateGroups.reduce((sum, g) => sum + (g.profit || 0), 0))}</span>
+          </div>
         </div>
       )}
 
       <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-        <section style={{ ...card(), flex: "1 1 280px" }}>
+        <section style={{ ...plainSection(), flex: "1 1 280px" }}>
           {loading ? (
             <p>読み込み中...</p>
           ) : dateGroups.length === 0 ? (
@@ -2389,8 +2397,8 @@ function HistoryPanel() {
                 </button>
               </div>
             ))}
-            {/* 2026-10-02 追加（kento指示）: 検索した期間の合計（税抜の商品合計と利益） */}
-            <div
+            {/* 2026-10-02 追加（kento指示）: 検索した期間の合計（税抜の商品合計と利益）。1日だけのときは出さない */}
+            {startDate !== endDate && <div
               style={{
                 display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 8px 2px",
                 marginTop: 6, borderTop: `2px solid ${T.border}`, fontSize: 13, fontWeight: 700,
@@ -2401,13 +2409,13 @@ function HistoryPanel() {
                 {fmtYen(dateGroups.reduce((sum, g) => sum + (g.subtotal || 0), 0))}
                 <span style={{ marginLeft: 8, color: T.green }}>利益 {fmtYen(dateGroups.reduce((sum, g) => sum + (g.profit || 0), 0))}</span>
               </span>
-            </div>
+            </div>}
             </>
           )}
         </section>
 
         {selectedDate && (
-          <section style={{ ...card(), flex: "1 1 400px", minWidth: 0 }}>
+          <section style={{ ...plainSection(), flex: "1 1 400px", minWidth: 0 }}>
             {loadingDetail ? (
               <p>読み込み中...</p>
             ) : (
