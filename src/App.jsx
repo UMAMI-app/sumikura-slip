@@ -2316,7 +2316,8 @@ function HistoryPanel() {
           ) : dateGroups.length === 0 ? (
             <p style={{ color: T.textSub, fontSize: 13 }}>該当する納品書はありません。</p>
           ) : (
-            dateGroups.map((g) => (
+            <>
+            {dateGroups.map((g) => (
               <div
                 key={g.date}
                 style={{
@@ -2341,7 +2342,21 @@ function HistoryPanel() {
                   {deletingDate === g.date ? "削除中..." : "削除"}
                 </button>
               </div>
-            ))
+            ))}
+            {/* 2026-10-02 追加（kento指示）: 検索した期間の合計（税抜の商品合計と利益） */}
+            <div
+              style={{
+                display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 8px 2px",
+                marginTop: 6, borderTop: `2px solid ${T.border}`, fontSize: 13, fontWeight: 700,
+              }}
+            >
+              <span>期間合計（{dateGroups.length}日分）</span>
+              <span style={{ marginRight: 10, textAlign: "right" }}>
+                {fmtYen(dateGroups.reduce((sum, g) => sum + (g.subtotal || 0), 0))}
+                <span style={{ marginLeft: 8, color: T.green }}>利益 {fmtYen(dateGroups.reduce((sum, g) => sum + (g.profit || 0), 0))}</span>
+              </span>
+            </div>
+            </>
           )}
         </section>
 
