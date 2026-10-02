@@ -136,7 +136,7 @@ export default function App() {
 
   return (
     <div style={{ fontFamily: "system-ui, -apple-system, 'Hiragino Sans', sans-serif", background: T.bg, minHeight: "100vh", color: T.textMain }}>
-      <header style={{ padding: "10px 16px 14px", borderBottom: `1px solid ${T.border}` }}>
+      <header style={{ padding: "10px 16px 6px" }}>
         {/* 2026-09-30: 画面上部の「日付（曜日）原稿N件読込済」表示は削除（kento指示） */}
         <nav style={{ display: "flex", gap: 6 }}>
           {[
@@ -320,9 +320,11 @@ function ManuscriptPanel({ date, onDateChange, items, loading, onSaved }) {
 
   return (
     <div>
-      <DateHeader title="原稿読み込み" date={date} onDateChange={onDateChange} />
-      <section style={card()}>
-        <h3 style={h3()}>原稿テキストを貼り付け</h3>
+      <section style={plainSection()}>
+        <div style={sectionHeadRow()}>
+          <h3 style={{ ...h3(), margin: 0 }}>原稿テキストを貼り付け</h3>
+          <DateInline date={date} onDateChange={onDateChange} />
+        </div>
         <textarea
           value={pasteText}
           onChange={(e) => setPasteText(e.target.value)}
@@ -338,7 +340,7 @@ function ManuscriptPanel({ date, onDateChange, items, loading, onSaved }) {
       {err && <div style={{ color: T.warn, marginBottom: 12 }}>{err}</div>}
 
       {preview && (
-        <section style={card()}>
+        <section style={plainSection()}>
           <h3 style={h3()}>抽出結果プレビュー — {preview.items.length}件（内容を確認・修正してから保存してください）</h3>
           <div style={{ overflowX: "auto" }}>
             <table style={table()}>
@@ -397,7 +399,7 @@ function ManuscriptPanel({ date, onDateChange, items, loading, onSaved }) {
         </section>
       )}
 
-      <section style={card()}>
+      <section style={plainSection()}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
           <h3 style={h3()}>{date} に保存済みの原稿商品（{items.length}件）</h3>
           {items.length > 0 && (
@@ -473,6 +475,36 @@ function DateHeader({ title, date, onDateChange, children }) {
       {children}
     </div>
   );
+}
+
+// 2026-10-02 追加（kento指示）: 原稿・価格チェック・納品書ページの大きな区画は背景の箱を付けず、
+// 横幅いっぱいに使う。
+function plainSection() {
+  return { marginBottom: 24 };
+}
+
+// 見出しの右に置く日付（カレンダー）。ページ見出しを無くしたので、区画の見出しの右に右寄せで置く。
+function DateInline({ date, onDateChange }) {
+  const today = todayStr();
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: "auto" }}>
+      {date !== today && onDateChange && (
+        <button style={{ ...btn(false), padding: "4px 10px", fontSize: 12 }} onClick={() => onDateChange(today)}>
+          今日に戻す
+        </button>
+      )}
+      <input
+        type="date"
+        style={{ ...calendarInputStyle(), ...(date !== today ? { borderBottomColor: T.warn, color: T.warn } : {}) }}
+        value={date}
+        onChange={(e) => { if (e.target.value && onDateChange) onDateChange(e.target.value); }}
+      />
+    </div>
+  );
+}
+
+function sectionHeadRow() {
+  return { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 10 };
 }
 
 function card() {
@@ -956,8 +988,7 @@ function OrdersPanel({ date, onDateChange, orderLines, onChanged }) {
 function PriceCheckPanel({ date, onDateChange, manuscriptItems, manuscriptItemById }) {
   return (
     <div>
-      <DateHeader title="価格チェック" date={date} onDateChange={onDateChange} />
-      <LineActualPaste date={date} manuscriptItems={manuscriptItems} manuscriptItemById={manuscriptItemById} />
+      <LineActualPaste date={date} onDateChange={onDateChange} manuscriptItems={manuscriptItems} manuscriptItemById={manuscriptItemById} />
     </div>
   );
 }
@@ -1012,7 +1043,7 @@ function groupLineItemsByDestination(items) {
   });
 }
 
-function LineActualPaste({ date, manuscriptItems, manuscriptItemById }) {
+function LineActualPaste({ date, onDateChange, manuscriptItems, manuscriptItemById }) {
   const [text, setText] = useState("");
   const [preview, setPreview] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -1317,8 +1348,11 @@ function LineActualPaste({ date, manuscriptItems, manuscriptItemById }) {
   };
 
   return (
-    <section style={card()}>
-      <h3 style={h3()}>① LINE実績データを貼り付け</h3>
+    <section style={plainSection()}>
+      <div style={sectionHeadRow()}>
+        <h3 style={{ ...h3(), margin: 0 }}>① LINE実績データを貼り付け</h3>
+        <DateInline date={date} onDateChange={onDateChange} />
+      </div>
       {err && <div style={{ color: T.warn, marginBottom: 8, fontSize: 13 }}>{err}</div>}
       <textarea
         value={text}
@@ -2042,7 +2076,8 @@ function InvoicePanel({ date, onDateChange }) {
 
   return (
     <div>
-      <DateHeader title="納品書作成" date={date} onDateChange={onDateChange}>
+      <div style={{ ...sectionHeadRow(), justifyContent: "flex-end" }}>
+        <DateInline date={date} onDateChange={onDateChange} />
         <button
           style={{
             ...btn(true),
@@ -2053,7 +2088,7 @@ function InvoicePanel({ date, onDateChange }) {
         >
           {savingAll ? "保存中..." : "保存"}
         </button>
-      </DateHeader>
+      </div>
       {loadErr && <div style={{ color: T.warn, marginBottom: 12 }}>{loadErr}</div>}
       {err && <div style={{ color: T.warn, marginBottom: 12 }}>{err}</div>}
       {loadingItems && <p style={{ fontSize: 13, color: T.textSub }}>読み込み中...</p>}
@@ -2063,7 +2098,7 @@ function InvoicePanel({ date, onDateChange }) {
       ) : (
         <>
           {printableGroups.length > 0 && (
-            <section style={card()}>
+            <section style={plainSection()}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
                 <h3 style={{ ...h3(), marginBottom: 0 }}>プレビュー（A4印刷用）</h3>
                 <button style={btn(true)} disabled={savingPdf} onClick={savePdfAll}>{savingPdf ? "PDF作成中..." : "PDFで保存"}</button>
