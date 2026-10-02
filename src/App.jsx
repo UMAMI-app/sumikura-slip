@@ -484,10 +484,10 @@ function plainSection() {
 }
 
 // 見出しの右に置く日付（カレンダー）。ページ見出しを無くしたので、区画の見出しの右に右寄せで置く。
-function DateInline({ date, onDateChange }) {
+function DateInline({ date, onDateChange, style }) {
   const today = todayStr();
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: "auto" }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: "auto", ...style }}>
       {date !== today && onDateChange && (
         <button style={{ ...btn(false), padding: "4px 10px", fontSize: 12 }} onClick={() => onDateChange(today)}>
           今日に戻す
@@ -2076,8 +2076,10 @@ function InvoicePanel({ date, onDateChange }) {
 
   return (
     <div>
-      <div style={{ ...sectionHeadRow(), justifyContent: "flex-end" }}>
-        <DateInline date={date} onDateChange={onDateChange} />
+      {/* 2026-10-02 変更（kento指示）: 「プレビュー（A4印刷用）」の見出しを削除し、その位置に日付＋保存ボタン、
+          右端に「PDFで保存」を置く（プレビューはそのすぐ下に詰めて表示）。 */}
+      <div style={sectionHeadRow()}>
+        <DateInline date={date} onDateChange={onDateChange} style={{ marginLeft: 0 }} />
         <button
           style={{
             ...btn(true),
@@ -2088,6 +2090,9 @@ function InvoicePanel({ date, onDateChange }) {
         >
           {savingAll ? "保存中..." : "保存"}
         </button>
+        {destinations.length > 0 && printableGroups.length > 0 && (
+          <button style={{ ...btn(true), marginLeft: "auto" }} disabled={savingPdf} onClick={savePdfAll}>{savingPdf ? "PDF作成中..." : "PDFで保存"}</button>
+        )}
       </div>
       {loadErr && <div style={{ color: T.warn, marginBottom: 12 }}>{loadErr}</div>}
       {err && <div style={{ color: T.warn, marginBottom: 12 }}>{err}</div>}
@@ -2099,10 +2104,6 @@ function InvoicePanel({ date, onDateChange }) {
         <>
           {printableGroups.length > 0 && (
             <section style={plainSection()}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-                <h3 style={{ ...h3(), marginBottom: 0 }}>プレビュー（A4印刷用）</h3>
-                <button style={btn(true)} disabled={savingPdf} onClick={savePdfAll}>{savingPdf ? "PDF作成中..." : "PDFで保存"}</button>
-              </div>
               <A4PreviewScaler ref={previewScalerRef}>
                 <div id="invoice-print-area" style={{ position: "relative", width: "210mm", maxWidth: "none", margin: "0 auto", background: "#fff", border: `1px solid ${T.softBorder}` }}>
                   <InvoiceDocument
