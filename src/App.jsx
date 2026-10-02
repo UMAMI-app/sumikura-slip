@@ -2308,6 +2308,16 @@ function HistoryPanel() {
         <input type="date" style={calendarInputStyle()} value={endDate} onChange={(e) => setEndDate(e.target.value)} />
         <button style={btn(true)} onClick={search}>検索</button>
       </div>
+      {/* 2026-10-02 追加（kento指示）: 検索した期間の合計を、検索欄のすぐ下にも目立つ形で表示する */}
+      {!loading && dateGroups.length > 0 && (
+        <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap", margin: "-6px 0 14px", fontSize: 14 }}>
+          <span style={{ color: T.textSub }}>
+            {startDate === endDate ? `${formatMD(startDate)}` : `${formatMD(startDate)}〜${formatMD(endDate)}`}の合計
+          </span>
+          <span style={{ fontWeight: 700 }}>{fmtYen(dateGroups.reduce((sum, g) => sum + (g.subtotal || 0), 0))}</span>
+          <span style={{ fontWeight: 700, color: T.green }}>利益 {fmtYen(dateGroups.reduce((sum, g) => sum + (g.profit || 0), 0))}</span>
+        </div>
+      )}
 
       <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
         <section style={{ ...card(), flex: "1 1 280px" }}>
