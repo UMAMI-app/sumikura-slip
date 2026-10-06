@@ -123,3 +123,18 @@ console.log('OK: kadokura extraction basic cases pass');
   ]);
   console.log('OK: ◎ウニの番号付き見出しを品目名から外す');
 }
+
+// 2026-10-06 追加（kento指示）: ◎フグ（ウニ以外の◎ブロック、・㌔○○のkg単価）
+{
+  const { extractKadokuraManuscriptItems: ex } = await import('../src/lib/manuscriptKadokura.js');
+  const assert2 = (await import('node:assert')).default;
+  const raw = '◎活,天然フグ\n宮城他\n尾2.0〜3.0㌔\n   ・㌔12,800\n※イケス納品🉑\n※身欠🉑\n※①尾より受注します\n\n◎海上養殖フグＡ🐡\n鳥取\n尾約1.5㌔前後\n   ・㌔5,900\n※イケス納品🉑\n\n◎陸上養殖フグ🐡\n大分\n尾約1.5㌔前後\n   ・㌔5,400\n※①尾より受注します\n';
+  const { items, skippedLines } = ex(raw);
+  assert2.deepEqual(skippedLines, []);
+  assert2.deepEqual(items.map((i) => [i.item_name, i.origin, i.spec, i.unit_price, i.price_unit]), [
+    ['活,天然フグ', '宮城他', '2.0〜3.0kg', 12800, 'kg'],
+    ['海上養殖フグ', '鳥取', '1.5kg前後', 5900, 'kg'],
+    ['陸上養殖フグ', '大分', '1.5kg前後', 5400, 'kg'],
+  ]);
+  console.log('OK: ◎フグ（ウニ以外の◎ブロック）');
+}

@@ -163,6 +163,13 @@ export function groupLines(rawText) {
       return;
     }
 
+    // 2026-10-06 追加（kento指示）: ◎ブロックで「・㌔12,800」と書かれていればkg単価（フグなど）
+    if (current && current.isMaruUni && /^[・･]\s*㌔\s*[\d,]+/.test(line)) {
+      const pm = line.match(/([\d,]+)/);
+      if (pm) { current.maruUniPrice = parseInt(pm[1].replace(/,/g, ''), 10); current.maruUniUnit = 'kg'; }
+      return;
+    }
+
     if (current && current.variants.length > 0 && /^[・･]?㌔/.test(line)) {
       current.variants[current.variants.length - 1].priceLine = line.replace(/^[・･]/, '');
       return;
@@ -373,6 +380,32 @@ export function extractKadokuraManuscriptItems(rawText) {
     //   ウニは書き方が特殊なので、価格（「・＠25,500」）の手前までに書かれていることを全部品目名にする
     //   （例: 北ウニNo.① （養殖） カネキ木村250ｇ 【浜中養殖バフン】。規格は空欄）。kento指示 2026-09-25。
     //   単位 = ウニは枚（塩水ウニはpc）、産地 = 行の中の都道府県・国名（データとして記録）。
+    // 2026-10-06 追加（kento指示）: ◎ブロックでもウニ以外（活,天然フグ・養殖フグなど）は、
+    //   品目名 = ◎の見出し（絵文字と末尾の「Ａ」などの記号的な1文字を除く）
+    //   産地 = 都道府県名を含む行をそのまま（例: 宮城他）
+    //   規格 = サイズの行（「尾」「約」を除き、㌔→kg。例: 尾約1.5㌔前後 → 1.5kg前後）
+    //   単価 = 「・㌔12,800」（kg単価）。「※」で始まる行は無視。
+    if (group.isMaruUni && group.maruUniPrice != null && !/ウニ|うに|雲丹|廣田丸|広田丸|与助|山由丸/.test(`${group.name} ${group.variants.map((v) => v.raw).join(' ')}`)) {
+      const lines2 = group.variants.map((v) => v.raw.trim()).filter(Boolean);
+      const originLine2 = lines2.find((l) => !/\d/.test(l) && ORIGIN_NAMES.some((p) => l.includes(p))) || '';
+      const sizeLine = lines2.find((l) => /\d/.test(l)) || '';
+      const name = group.name
+        .replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\uFE0F]/gu, '')
+        .trim()
+        .replace(/[\s　]*[A-ZＡ-Ｚ]$/, '')
+        .trim();
+      const spec = sizeLine.replace(/^尾/, '').replace(/約/g, '').replace(/㌔/g, 'kg').replace(/[\s　]+/g, ' ').trim();
+      items.push({
+        item_name: normalizeName(name),
+        origin: originLine2,
+        spec,
+        unit_price: group.maruUniPrice,
+        price_unit: group.maruUniUnit || 'kg',
+        raw_line: `◎${group.name} / ${lines2.join(' / ')} / ${group.maruUniPrice}`,
+      });
+      return;
+    }
+
     if (group.isMaruUni && group.maruUniPrice != null) {
       const detail = group.variants.map((v) => v.raw.trim()).filter(Boolean).join(' ');
       const all = `${group.name} ${detail}`;
