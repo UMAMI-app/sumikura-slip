@@ -353,6 +353,9 @@ export function parseVariantLineRaw(raw) {
   return { kind: 'none', sizeText: s, priceOk: false };
 }
 
+// ◎ウニの番号付き見出し（例: 北ウニNo.① / 塩水ウニNo.12 / 北ウニ No.３ / 北ウニNO②）
+const UNI_NUMBER_HEADER_RE = /^.*(?:ウニ|うに|雲丹)\s*(?:No|NO|no|Ｎｏ|ＮＯ|№)\s*[.．]?\s*[0-9０-９①-⑳㉑-㉟]+\s*$/;
+
 // 由良ウニの船名（「与助丸」を「与助」より先に判定する）
 const UNI_BOAT_RE = /廣田丸|広田丸|与助丸|与助|山由丸/;
 
@@ -375,7 +378,12 @@ export function extractKadokuraManuscriptItems(rawText) {
       const all = `${group.name} ${detail}`;
       const pref = ORIGIN_NAMES.find((p) => all.includes(p)) || '';
       items.push({
-        item_name: normalizeName(all.replace(/[\s　]+/g, ' ').trim()),
+        // 2026-10-06 変更（kento指示）: 「北ウニNo.①」「塩水ウニNo.12」のような番号付きの見出しは
+        // 品目名から外す（番号は①②…、1・12、全角数字など何でも）。見出しが番号付きでない
+        // 「八幡浜のウニ」等はこれまでどおり品目名に残す。
+        item_name: normalizeName(
+          ((UNI_NUMBER_HEADER_RE.test(group.name.trim()) && detail) ? detail : all).replace(/[\s　]+/g, ' ').trim()
+        ),
         origin: pref,
         spec: '',
         unit_price: group.maruUniPrice,

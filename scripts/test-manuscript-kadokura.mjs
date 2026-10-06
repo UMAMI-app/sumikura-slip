@@ -64,8 +64,8 @@ console.log('OK: kadokura extraction basic cases pass');
   assert2.deepEqual(skippedLines, []);
   assert2.deepEqual(items.map((i) => [i.item_name, i.origin, i.spec, i.unit_price, i.price_unit]), [
     ['八幡浜のウニ 愛媛,八幡浜赤雲丹 50g前後', '愛媛', '', 8400, '枚'],
-    ['北ウニNo.① （養殖） カネキ木村250ｇ 【浜中養殖バフン】', '', '', 25500, '枚'],
-    ['塩水ウニNo.① 福士塩水雲丹【利尻島白】100g', '', '', 6200, 'pc'],
+    ['（養殖） カネキ木村250ｇ 【浜中養殖バフン】', '', '', 25500, '枚'],
+    ['福士塩水雲丹【利尻島白】100g', '', '', 6200, 'pc'],
     ['仙鳳趾ムキ牡蠣', '北海道', '極大粒 500g入', 4900, 'P'],
     ['仙鳳趾ムキ牡蠣', '北海道', '大粒 500g入', 4400, 'P'],
     ['ちりめん山椒', '兵庫', '1k×1P', 3000, 'P'],
@@ -107,4 +107,19 @@ console.log('OK: kadokura extraction basic cases pass');
     ['マアジ', '千葉', '400g-500g', 3000, 'kg'],
   ]);
   console.log('OK: 「•」も品目の区切り／cs単価');
+}
+
+// 2026-10-06 追加（kento指示）: 「◎北ウニNo.①」「◎塩水ウニNo.12」等の番号付き見出しは品目名から外す
+{
+  const { extractKadokuraManuscriptItems: ex } = await import('../src/lib/manuscriptKadokura.js');
+  const assert2 = (await import('node:assert')).default;
+  const raw = '◎北ウニNo.①\n昆布森100g雲丹\n【黄上】　\n・＠13,800\n◎塩水ウニNo.①\n昆布森塩水雲丹\n【青】100g 　\n・＠12,800\n◎北ウニNo.12\n小川SP250g\n・＠19,500\n◎北ウニ No.３\n小川SP250g\n・＠19,500\n';
+  const { items } = ex(raw);
+  assert2.deepEqual(items.map((i) => [i.item_name, i.unit_price, i.price_unit]), [
+    ['昆布森100g雲丹 【黄上】', 13800, '枚'],
+    ['昆布森塩水雲丹 【青】100g', 12800, 'pc'],
+    ['小川SP250g', 19500, '枚'],
+    ['小川SP250g', 19500, '枚'],
+  ]);
+  console.log('OK: ◎ウニの番号付き見出しを品目名から外す');
 }
