@@ -108,4 +108,17 @@ assert.equal(pickCertainCandidate({ item_name: '活〆マダイ' }, [{ id: 'x', 
   assert.equal(pickCertainCandidate({ item_name: 'シマアジ' }, m3)?.id, 'shima');
   assert.equal(pickCertainCandidate({ item_name: 'シマアジ 半身' }, m3)?.id, 'shima');
 }
+// 2026-10-06: 戻りカツオ→カツオ(宮城)、迷いカツオ→カツオ(長崎)（ガツオ表記も）
+{
+  const m4 = [
+    { id: 'miyagi', item_name: 'カツオ', origin: '宮城', spec: '2k前後' },
+    { id: 'nagasaki', item_name: 'カツオ', origin: '長崎', spec: '2k前後' },
+    { id: 'kochi', item_name: 'カツオ', origin: '高知', spec: '' },
+  ];
+  const c = (n) => pickCertainCandidate({ item_name: n }, m4)?.id ?? null;
+  assert.equal(c('戻りカツオ'), 'miyagi');
+  assert.equal(c('戻りガツオ 半身'), 'miyagi');
+  assert.equal(c('迷いカツオ'), 'nagasaki');
+  assert.equal(c('迷いガツオ 腹1/4'), 'nagasaki');
+}
 console.log('OK: 確実な候補のみデフォルト紐付け／天然鯛系→活天然タイSP／船名一致／原稿検索');

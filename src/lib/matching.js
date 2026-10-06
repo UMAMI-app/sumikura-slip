@@ -62,6 +62,18 @@ const CERTAIN_ALIASES = [
   { lineNames: ['キンメ'], prefix: true, matchManuscript: (mName) => mName.includes('キンメ鯛') },
   { lineNames: ['真鯖', '真サバ'], prefix: true, matchManuscript: (mName) => mName.includes('マサバ') },
   { lineNames: ['毛蟹'], prefix: true, matchManuscript: (mName) => mName.includes('毛ガニ') },
+  // 2026-10-06 追加（kento指示）: 戻りカツオ → 原稿の「カツオ（宮城）」、迷いカツオ → 「カツオ（長崎）」。
+  // 「ガツオ」表記（戻りガツオ・迷いガツオ）にも対応。原稿側は品目名にカツオ/ガツオを含み、産地が一致するもの。
+  {
+    lineNames: ['戻りカツオ', '戻りガツオ', '戻り鰹'],
+    prefix: true,
+    matchManuscript: (mName, mSpec, mi) => /[カガ]ツオ|鰹/.test(mName) && (mi?.origin || '').includes('宮城'),
+  },
+  {
+    lineNames: ['迷いカツオ', '迷いガツオ', '迷い鰹'],
+    prefix: true,
+    matchManuscript: (mName, mSpec, mi) => /[カガ]ツオ|鰹/.test(mName) && (mi?.origin || '').includes('長崎'),
+  },
   // 2026-10-06 追加（kento指示）: シマアジ → 原稿の「天シマアジ」（天然シマアジ表記にも対応）
   { lineNames: ['シマアジ', '縞鯵', 'しまあじ'], prefix: true, matchManuscript: (mName) => /天(?:然)?シマアジ/.test(mName) },
 ];
@@ -209,7 +221,7 @@ export function rankManuscriptCandidates(lineItem, manuscriptItems) {
     if (alias) {
       // 対応表に載っている呼び方は、対応先の原稿品目だけを「確実」とし、
       // それ以外は通常の部分一致判定に任せる
-      if (alias.matchManuscript(mName, mSpec)) tier = 4;
+      if (alias.matchManuscript(mName, mSpec, mi)) tier = 4;
     }
     if (tier === 0 && mName === qName) tier = 3;
     else if (tier === 0 && (mName.includes(qName) || qName.includes(mName))) tier = 2;
