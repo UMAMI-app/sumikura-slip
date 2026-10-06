@@ -62,6 +62,8 @@ const CERTAIN_ALIASES = [
   { lineNames: ['キンメ'], prefix: true, matchManuscript: (mName) => mName.includes('キンメ鯛') },
   { lineNames: ['真鯖', '真サバ'], prefix: true, matchManuscript: (mName) => mName.includes('マサバ') },
   { lineNames: ['毛蟹'], prefix: true, matchManuscript: (mName) => mName.includes('毛ガニ') },
+  // 2026-10-06 追加（kento指示）: シマアジ → 原稿の「天シマアジ」（天然シマアジ表記にも対応）
+  { lineNames: ['シマアジ', '縞鯵', 'しまあじ'], prefix: true, matchManuscript: (mName) => /天(?:然)?シマアジ/.test(mName) },
 ];
 
 // 由良ウニの船名。LINE側・原稿側の両方に同じ船名があれば候補にする（tier 2）。

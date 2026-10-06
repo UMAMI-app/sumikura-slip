@@ -99,4 +99,13 @@ assert.equal(pickCertainCandidate({ item_name: '活〆マダイ' }, [{ id: 'x', 
   assert.equal(c('天然鯛 半身'), 'tai-sp');
   assert.equal(c('タイラギ'), null); // 「タイ」で始まるだけの別の品目には反応しない
 }
+// 2026-10-06: シマアジ → 天シマアジ（マアジ等の他のアジより優先して確定）
+{
+  const m3 = [
+    { id: 'shima', item_name: '天シマアジ', origin: '愛媛', spec: '2k前後' },
+    { id: 'maaji', item_name: 'マアジ', origin: '兵庫', spec: '' },
+  ];
+  assert.equal(pickCertainCandidate({ item_name: 'シマアジ' }, m3)?.id, 'shima');
+  assert.equal(pickCertainCandidate({ item_name: 'シマアジ 半身' }, m3)?.id, 'shima');
+}
 console.log('OK: 確実な候補のみデフォルト紐付け／天然鯛系→活天然タイSP／船名一致／原稿検索');
