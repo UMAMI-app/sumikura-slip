@@ -1786,12 +1786,12 @@ function InvoiceHeader({ invoiceDate }) {
     <div style={{ marginBottom: 9, borderBottom: "2px solid #333", paddingBottom: 6 }}>
       <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "start" }}>
         <div>
-          <div style={{ fontSize: INVOICE_ITEM_FONT, fontWeight: 700 }}>{INVOICE_TO_NAME}</div>
+          <div style={{ fontSize: INVOICE_ITEM_FONT }}>{INVOICE_TO_NAME}</div>
           <div style={{ fontSize: 14, color: "#444", marginTop: 2 }}>{formatMD(invoiceDate)}（{weekdayJa(invoiceDate)}）</div>
         </div>
         <div style={{ fontSize: INVOICE_ITEM_FONT, fontWeight: 700, letterSpacing: "0.2em", padding: "0 12px" }}>納品書</div>
         <div style={{ justifySelf: "end", display: "inline-flex", flexDirection: "column", alignItems: "flex-start" }}>
-          <span ref={fromRef} style={{ fontSize: INVOICE_ITEM_FONT, fontWeight: 700, whiteSpace: "nowrap", display: "inline-block" }}>{INVOICE_FROM_NAME}</span>
+          <span ref={fromRef} style={{ fontSize: INVOICE_ITEM_FONT, whiteSpace: "nowrap", display: "inline-block" }}>{INVOICE_FROM_NAME}</span>
           <span ref={regRef} style={{ fontSize: regFont, whiteSpace: "nowrap", display: "inline-block", marginTop: 2, color: "#222" }}>{INVOICE_REG_NO}</span>
         </div>
       </div>
