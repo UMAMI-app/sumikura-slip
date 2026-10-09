@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo, useImperativeHandle, forwardRef, Fragment } from "react";
+import { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo, useImperativeHandle, forwardRef, Fragment } from "react";
 import { db, isSupabaseConfigured } from "./lib/supabase";
 import { extractKadokuraManuscriptItems } from "./lib/manuscriptKadokura";
 import { parseShippingList, cleanDestinationName } from "./lib/shippingList";
@@ -1748,6 +1748,59 @@ const A4PreviewScaler = forwardRef(function A4PreviewScaler({ children }, ref) {
   );
 });
 
+// 2026-10-09 追加（kento指示）: 納品書（PDF）の1ページ目上部の固定表記。
+//   一番上の中央に「納品書」（商品名の2倍の文字サイズ）
+//   その下の左に「旨味フーズ」、右に「株式会社コウエイ」（どちらも商品名と同じ文字サイズ）
+//   「旨味フーズ」の下に日付、「株式会社コウエイ」の下に「登録番号 T2140001136570」
+//   （登録番号は「株式会社コウエイ」の文字幅にぴったり合う文字サイズに自動調整）
+const INVOICE_ITEM_FONT = 18; // 明細の品目名の文字サイズ（renderLineのfontSizeと同じ）
+const INVOICE_TO_NAME = "旨味フーズ";
+const INVOICE_FROM_NAME = "株式会社コウエイ";
+const INVOICE_REG_NO = "登録番号 T2140001136570";
+
+function InvoiceHeader({ invoiceDate }) {
+  const fromRef = useRef(null);
+  const regRef = useRef(null);
+  const [regFont, setRegFont] = useState(11);
+  useLayoutEffect(() => {
+    const fit = () => {
+      const from = fromRef.current;
+      const reg = regRef.current;
+      if (!from || !reg) return;
+      // いったん基準サイズ(100px)で登録番号の幅を測り、会社名の幅に合わせて文字サイズを決める
+      // （offsetWidth/scrollWidth はプレビューの縮小表示(transform)の影響を受けない）
+      reg.style.fontSize = "100px";
+      const regWidthAt100 = reg.scrollWidth;
+      const fromWidth = from.offsetWidth;
+      if (regWidthAt100 > 0 && fromWidth > 0) {
+        const size = Math.floor(((100 * fromWidth) / regWidthAt100) * 100) / 100;
+        reg.style.fontSize = `${size}px`;
+        setRegFont(size);
+      }
+    };
+    fit();
+    // フォントの読み込みが後から終わると幅が変わるので、読み込み完了後にもう一度合わせる
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(fit).catch(() => {});
+  }, []);
+  return (
+    <div style={{ marginBottom: 9, borderBottom: "2px solid #333", paddingBottom: 6 }}>
+      <div style={{ textAlign: "center", fontSize: INVOICE_ITEM_FONT * 2, fontWeight: 700, letterSpacing: "0.2em", lineHeight: 1.3, marginBottom: 6 }}>
+        納品書
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+        <div>
+          <div style={{ fontSize: INVOICE_ITEM_FONT, fontWeight: 700 }}>{INVOICE_TO_NAME}</div>
+          <div style={{ fontSize: 14, color: "#444", marginTop: 2 }}>{formatMD(invoiceDate)}（{weekdayJa(invoiceDate)}）</div>
+        </div>
+        <div style={{ display: "inline-flex", flexDirection: "column", alignItems: "flex-start" }}>
+          <span ref={fromRef} style={{ fontSize: INVOICE_ITEM_FONT, fontWeight: 700, whiteSpace: "nowrap", display: "inline-block" }}>{INVOICE_FROM_NAME}</span>
+          <span ref={regRef} style={{ fontSize: regFont, whiteSpace: "nowrap", display: "inline-block", marginTop: 2, color: "#222" }}>{INVOICE_REG_NO}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // 2026-09-23 変更（kento指示）:
 //   - 列を「品目 / 数量 / 目方 / 単価 / 金額」にする（数量の列を新設）
 //   - 備考は新しい列ではなく、品目名の右に続けて「(備考)」で表示（文字は約80%）
@@ -1807,12 +1860,7 @@ function InvoicePreview({ invoiceDate, destination, lineItems, showTitle = true,
       data-pdf-block="1"
       style={{ width: "100%", boxSizing: "border-box", background: "#fff", padding: "2.7mm 10mm", fontFamily: INVOICE_FONT, color: "#222" }}
     >
-      {showTitle && (
-        <div style={{ display: "flex", alignItems: "baseline", gap: 16.2, borderBottom: "2px solid #333", paddingBottom: 5.4, marginBottom: 9 }}>
-          <h2 style={{ fontSize: 16.2, margin: 0 }}>納品書</h2>
-          <span style={{ fontSize: 16.2, color: "#555" }}>{formatMD(invoiceDate)}（{weekdayJa(invoiceDate)}）</span>
-        </div>
-      )}
+      {showTitle && <InvoiceHeader invoiceDate={invoiceDate} />}
       {sectionHeader}
       {!showTitle && !sectionHeader && <div style={{ borderTop: "1px solid #999", margin: "1.7px 0" }} />}
       {/* 2026-09-23 変更（kento指示）: 宅急便の発送→着日は店舗名の横には書かず、
