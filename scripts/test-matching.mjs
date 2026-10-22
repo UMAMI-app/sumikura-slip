@@ -122,3 +122,18 @@ assert.equal(pickCertainCandidate({ item_name: '活〆マダイ' }, [{ id: 'x', 
   assert.equal(c('迷いガツオ 腹1/4'), 'nagasaki');
 }
 console.log('OK: 確実な候補のみデフォルト紐付け／天然鯛系→活天然タイSP／船名一致／原稿検索');
+
+// 2026-10-22: ヒラメ/足赤エビ/ワタリガニ/シマアジ の対応
+{
+  const { rankManuscriptCandidates } = await import('../src/lib/matching.js');
+  const ms = [
+    { item_name: '天然ヒラメ', spec: '' }, { item_name: '養殖ヒラメ', spec: '' },
+    { item_name: '足赤海老', spec: '' }, { item_name: '活ワタリガニ', spec: '' }, { item_name: 'ワタリガニ', spec: '' },
+    { item_name: '天シマアジ', spec: '' },
+  ];
+  for (const [n, want] of [['ヒラメ', '天然ヒラメ'], ['足赤エビ', '足赤海老'], ['ワタリガニ', '活ワタリガニ'], ['シマアジ', '天シマアジ']]) {
+    const r = rankManuscriptCandidates({ item_name: n }, ms);
+    if (!(r[0] && r[0].item.item_name === want && r[0].tier === 4)) { console.error('NG', n, r[0]); process.exit(1); }
+  }
+  console.log('alias 2026-10-22 ok');
+}

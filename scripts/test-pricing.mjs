@@ -55,3 +55,10 @@ assert.equal(computeSellPrice({ amount: 5000, unit_price: 5000, price_unit: 'kg'
 // kg単価1万円以上なら、行の金額が1万円未満でも1.1倍（0.8kg×k12,000=9,600円 → 売値単価13,200 → 10,560円）
 assert.equal(computeSellPrice({ amount: 9600, unit_price: 12000, price_unit: 'kg', weight: 0.8 }), 10560);
 console.log('OK: pricing/tax logic matches spec test cases (4,5,6,7,8,9)');
+
+{
+  const { comparePrice } = await import('../src/lib/pricing.js');
+  const r = comparePrice({ manuscriptPrice: 100, manuscriptUnit: 'P', actualPrice: 100, actualUnit: 'pc' });
+  if (r.status !== 'same') { console.error('NG pc/P', r); process.exit(1); }
+  console.log('pc/P ok');
+}

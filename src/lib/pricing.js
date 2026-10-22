@@ -35,7 +35,9 @@ export function comparePrice({ manuscriptPrice, manuscriptUnit, actualPrice, act
   if (!manuscriptUnit || !actualUnit) {
     return { status: 'unit_unknown', diff: null, manuscriptUnit, actualUnit };
   }
-  if (manuscriptUnit !== actualUnit) {
+  // 「pc」と「P」（大文字小文字違い含む）は同じ単位として扱う（kento指示 2026-10-22）
+  const normUnit = (u) => { const t = String(u).trim().toLowerCase(); return t === 'p' ? 'pc' : t; };
+  if (normUnit(manuscriptUnit) !== normUnit(actualUnit)) {
     return { status: 'unit_mismatch', diff: null, manuscriptUnit, actualUnit };
   }
   const diff = actualPrice - manuscriptPrice;

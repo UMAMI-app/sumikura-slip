@@ -76,6 +76,10 @@ const CERTAIN_ALIASES = [
   },
   // 2026-10-06 追加（kento指示）: シマアジ → 原稿の「天シマアジ」（天然シマアジ表記にも対応）
   { lineNames: ['シマアジ', '縞鯵', 'しまあじ'], prefix: true, matchManuscript: (mName) => /天(?:然)?シマアジ/.test(mName) },
+  // 2026-10-22 追加（kento指示）: ヒラメ → 「天然ヒラメ」、足赤エビ → 原稿の「足赤」、ワタリガニ → 「活ワタリガニ」
+  { lineNames: ['ヒラメ', '平目', '鮃', 'ひらめ'], prefix: true, matchManuscript: (mName) => /天然(?:ヒラメ|平目|鮃)/.test(mName) },
+  { lineNames: ['足赤エビ', '足赤海老', '足赤えび', '足赤'], prefix: true, matchManuscript: (mName) => mName.includes('足赤') },
+  { lineNames: ['ワタリガニ', '渡り蟹', '渡蟹', '渡りガニ'], prefix: true, matchManuscript: (mName) => /活(?:ワタリガニ|渡り?蟹|渡りガニ)/.test(mName) },
 ];
 
 // 由良ウニの船名。LINE側・原稿側の両方に同じ船名があれば候補にする（tier 2）。
