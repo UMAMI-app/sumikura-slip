@@ -137,3 +137,14 @@ console.log('OK: 確実な候補のみデフォルト紐付け／天然鯛系→
   }
   console.log('alias 2026-10-22 ok');
 }
+
+// 2026-10-30: フグ
+{
+  const { rankManuscriptCandidates } = await import('../src/lib/matching.js');
+  const ms = [{ item_name: '天フグ', spec: '' }, { item_name: '海上養殖フグA', spec: '' }, { item_name: '陸上養殖フグ', spec: '' }];
+  for (const [n, want] of [['フグ', '天フグ'], ['ふぐ', '天フグ'], ['河豚 1kg', '天フグ'], ['海上フグ', '海上養殖フグA'], ['陸上養殖ふぐ', '陸上養殖フグ']]) {
+    const r = rankManuscriptCandidates({ item_name: n }, ms);
+    if (!(r[0] && r[0].item.item_name === want && r[0].tier === 4)) { console.error('NG', n, r[0]); process.exit(1); }
+  }
+  console.log('OK: フグ対応');
+}

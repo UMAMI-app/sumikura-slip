@@ -80,6 +80,11 @@ const CERTAIN_ALIASES = [
   { lineNames: ['ヒラメ', '平目', '鮃', 'ひらめ'], prefix: true, matchManuscript: (mName) => /天然(?:ヒラメ|平目|鮃)/.test(mName) },
   { lineNames: ['足赤エビ', '足赤海老', '足赤えび', '足赤'], prefix: true, matchManuscript: (mName) => mName.includes('足赤') },
   { lineNames: ['ワタリガニ', '渡り蟹', '渡蟹', '渡りガニ'], prefix: true, matchManuscript: (mName) => /活(?:ワタリガニ|渡り?蟹|渡りガニ)/.test(mName) },
+  // 2026-10-30 追加（kento指示）: 「ふぐ・フグ・河豚」を含む品目は原稿の「天フグ」（天然フグ表記も）に反応。
+  // 品目名に「陸上」「海上」が付いていれば、原稿の同じ「陸上〜」「海上〜」のフグに反応する。
+  { test: (n) => /ふぐ|フグ|河豚/.test(n) && n.includes('陸上'), matchManuscript: (mName) => mName.includes('陸上') && /ふぐ|フグ|河豚/.test(mName) },
+  { test: (n) => /ふぐ|フグ|河豚/.test(n) && n.includes('海上'), matchManuscript: (mName) => mName.includes('海上') && /ふぐ|フグ|河豚/.test(mName) },
+  { test: (n) => /ふぐ|フグ|河豚/.test(n), matchManuscript: (mName) => /天(?:然)?(?:ふぐ|フグ|河豚)/.test(mName) },
 ];
 
 // 由良ウニの船名。LINE側・原稿側の両方に同じ船名があれば候補にする（tier 2）。
@@ -220,7 +225,7 @@ export function rankManuscriptCandidates(lineItem, manuscriptItems) {
     // 「天然鯛SP」のように末尾に規格の「SP」が付いていても対応表の呼び方として扱う
     const qBase = qName.replace(/SP$/i, '');
     const alias = CERTAIN_ALIASES.find(
-      (a) => a.lineNames.includes(qName) || a.lineNames.includes(qBase) || (a.prefix && a.lineNames.some((n) => qName.startsWith(n)))
+      (a) => (a.test ? a.test(qName) : false) || (a.lineNames || []).includes(qName) || (a.lineNames || []).includes(qBase) || (a.prefix && (a.lineNames || []).some((n) => qName.startsWith(n)))
     );
     if (alias) {
       // 対応表に載っている呼び方は、対応先の原稿品目だけを「確実」とし、
