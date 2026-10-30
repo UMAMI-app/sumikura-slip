@@ -458,7 +458,7 @@ export function extractKadokuraManuscriptItems(rawText) {
     }
 
     const resolved = resolveNameOrigin(group);
-    let itemName = normalizeName(resolved.itemName);
+    let itemName = normalizeName(resolved.itemName).replace(/[Ａ-Ｚａ-ｚ０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0));
     // 2026-09-23 追加（kento指示）: 由良ウニの船名（廣田丸・与助・与助丸・山由丸）は
     // 「・由良ウニ兵庫(廣田丸)」のように産地の後ろの括弧に書かれることが多く、従来は産地の
     // 付属情報として捨てられていた（結果が「由良ウニ(兵庫)」になっていた）。
@@ -470,7 +470,16 @@ export function extractKadokuraManuscriptItems(rawText) {
     const origin = resolved.pref || '';
 
     group.variants.forEach((v) => {
-      const parsed = parseVariantLineRaw(v.raw);
+      let parsed = parseVariantLineRaw(v.raw);
+      // 2026-10-30 追加（kento指示）: 規格行の次の行に「・㌔5,300」と単価だけ書かれている場合は、
+      // 規格行を規格（「尾」「約」を除き㌔→kg。例: 尾約1.5㌔前後 → 1.5kg前後）、単価をkg単価として読む。
+      if (!parsed.priceOk && v.priceLine) {
+        const pm = v.priceLine.match(/([\d,]+)/);
+        if (pm) {
+          const sizeText = v.raw.replace(/^尾/, '').replace(/約/g, '').replace(/[㌔キロ]/g, 'kg').replace(/[\s　]+/g, ' ').trim();
+          parsed = { kind: 'single', sizeText, value: parseInt(pm[1].replace(/,/g, ''), 10), unit: 'kg', priceOk: true };
+        }
+      }
       if (!parsed.priceOk) {
         skippedLines.push(`${itemName} / ${v.raw}`);
         return;

@@ -138,3 +138,26 @@ console.log('OK: kadokura extraction basic cases pass');
   ]);
   console.log('OK: ◎フグ（ウニ以外の◎ブロック）');
 }
+
+// 2026-10-30: 規格行の次行に「・㌔単価」が来る書式（フグ）
+{
+  const { extractKadokuraManuscriptItems: ex } = await import('../src/lib/manuscriptKadokura.js');
+const t2 = `・海上養殖フグＡ
+鳥取
+尾約1.5㌔前後
+   ・㌔5,300
+※身欠🉑
+※①尾より受注します
+
+・陸上養殖フグ
+大分
+尾約1.5㌔前後
+   ・㌔4,800
+※身欠🉑
+※①尾より受注します
+`;
+  const r = ex(t2).items.map((i) => [i.item_name, i.origin, i.spec, i.unit_price, i.price_unit].join('|'));
+  const want = ['海上養殖フグA|鳥取|1.5kg前後|5300|kg', '陸上養殖フグ|大分|1.5kg前後|4800|kg'];
+  if (JSON.stringify(r) !== JSON.stringify(want)) { console.error('NG fugu', r); process.exit(1); }
+  console.log('OK: 規格行＋次行の㌔単価（フグ）');
+}
