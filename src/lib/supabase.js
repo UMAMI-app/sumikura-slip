@@ -10,13 +10,13 @@ export function isSupabaseConfigured() {
 }
 
 export async function sbFetch(table, options = {}) {
-  const { method = "GET", body, params = "" } = options;
+  const { method = "GET", body, params = "", prefer } = options;
   const headers = {
     apikey: SUPABASE_KEY,
     Authorization: `Bearer ${SUPABASE_KEY}`,
     "Content-Type": "application/json",
   };
-  if (method === "POST" || method === "PATCH") headers["Prefer"] = "return=representation";
+  if (method === "POST" || method === "PATCH") headers["Prefer"] = prefer || "return=representation";
 
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}${params}`, {
     method,
@@ -39,6 +39,9 @@ export const db = {
   updateWhere: (table, query, data) => sbFetch(table, { method: "PATCH", params: query, body: data }),
   remove: (table, id) => sbFetch(table, { method: "DELETE", params: `?id=eq.${id}` }),
   removeWhere: (table, query) => sbFetch(table, { method: "DELETE", params: query }),
+  // 2026-10-31 高速化: 主キー(keyCol)が同じ行は上書き、無い行は追加を1回の通信でまとめて行う。
+  upsertMany: (table, keyCol, rows) =>
+    sbFetch(table, { method: "POST", params: `?on_conflict=${keyCol}`, body: rows, prefer: "resolution=merge-duplicates,return=minimal" }),
   // keyColの値がすでに存在すればPATCH、無ければPOSTする（商品ごとの単価単位の学習等に使う）。
   upsertByKey: async (table, keyCol, keyVal, data) => {
     const existing = await sbFetch(table, { params: `?${keyCol}=eq.${encodeURIComponent(keyVal)}` });

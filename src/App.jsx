@@ -1,5 +1,6 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo, useImperativeHandle, forwardRef, Fragment } from "react";
 import { db, isSupabaseConfigured } from "./lib/supabase";
+import { cachePeek, cacheSet } from "./lib/cache";
 import { extractKadokuraManuscriptItems } from "./lib/manuscriptKadokura";
 import { parseShippingList, cleanDestinationName } from "./lib/shippingList";
 import { parseLineShipmentText, buildLineActualRows } from "./lib/lineShipment";
@@ -91,15 +92,15 @@ export default function App() {
 
   const loadManuscript = useCallback(async (date) => {
     if (!isSupabaseConfigured()) return;
-    const batches = await db.list("manuscript_batches", `?manuscript_date=eq.${date}&order=created_at.desc`);
+    // 2026-10-31 高速化: 「バッチ取得 → その結果でitems取得」の直列2往復を、
+    // items側でバッチの日付を条件にして並列1往復にした。
+    const [batches, rawItems] = await Promise.all([
+      db.list("manuscript_batches", `?manuscript_date=eq.${date}&order=created_at.desc`),
+      db.list("manuscript_items", `?select=*,manuscript_batches!inner(manuscript_date)&manuscript_batches.manuscript_date=eq.${date}&order=item_name.asc`),
+    ]);
     setManuscriptBatches(batches);
-    if (batches.length === 0) {
-      setManuscriptItems([]);
-      return;
-    }
-    const ids = batches.map((b) => `"${b.id}"`).join(",");
-    const items = await db.list("manuscript_items", `?batch_id=in.(${ids})&order=item_name.asc`);
-    setManuscriptItems(items);
+    // eslint-disable-next-line no-unused-vars
+    setManuscriptItems(rawItems.map(({ manuscript_batches, ...it }) => it));
   }, []);
 
   const loadOrderLines = useCallback(async (date) => {
@@ -113,14 +114,15 @@ export default function App() {
       setLoading(true);
       setGlobalError("");
       try {
-        await Promise.all([loadManuscript(date), loadOrderLines(date)]);
+        // 2026-10-31: 発注ページは廃止済みのため、使われていない発注データ(order_lines)の取得はやめた
+        await loadManuscript(date);
       } catch (e) {
         setGlobalError(e.message || String(e));
       } finally {
         setLoading(false);
       }
     },
-    [selectedDate, loadManuscript, loadOrderLines]
+    [selectedDate, loadManuscript]
   );
 
   useEffect(() => {
@@ -1053,9 +1055,13 @@ function LineActualPaste({ date, onDateChange, manuscriptItems, manuscriptItemBy
   const [unitMap, setUnitMap] = useState({});
 
   const loadSaved = useCallback(async () => {
-    setLoadingSaved(true);
+    // 2026-10-31 高速化: 前回取得分があればすぐ表示し、裏で最新を取り直す（InvoicePanelと共有）
+    const cached = cachePeek(`line_actual_items:${date}`);
+    if (cached) setSaved(cached);
+    setLoadingSaved(!cached);
     try {
       const rows = await db.list("line_actual_items", `?order_date=eq.${date}&order=created_at.asc`);
+      cacheSet(`line_actual_items:${date}`, rows);
       setSaved(rows);
     } catch (e) {
       setErr("読み込みに失敗しました: " + (e.message || e));
@@ -1065,10 +1071,13 @@ function LineActualPaste({ date, onDateChange, manuscriptItems, manuscriptItemBy
   }, [date]);
 
   const loadUnitMap = useCallback(async () => {
+    const cachedMap = cachePeek("product_price_units");
+    if (cachedMap) setUnitMap(cachedMap);
     try {
       const rows = await db.list("product_price_units");
       const m = {};
       rows.forEach((r) => { m[r.item_name] = r.default_unit; });
+      cacheSet("product_price_units", m);
       setUnitMap(m);
     } catch (e) {
       // 学習データが読めなくても致命的ではないため、名前パターン＋kgデフォルトで推測させる
@@ -1149,11 +1158,17 @@ function LineActualPaste({ date, onDateChange, manuscriptItems, manuscriptItemBy
           learned.set(it.item_name, it.purchase_price_unit);
         }
       });
-      await Promise.all(
-        Array.from(learned.entries()).map(([name, unit]) =>
-          db.upsertByKey("product_price_units", "item_name", name, { default_unit: unit, updated_at: new Date().toISOString() }).catch(() => {})
-        )
-      );
+      // 2026-10-31 高速化: 商品ごとに「確認→更新/追加」(2往復×件数)していたのを1回の通信にまとめた
+      if (learned.size > 0) {
+        const nowIso = new Date().toISOString();
+        const rows = Array.from(learned.entries()).map(([name, unit]) => ({ item_name: name, default_unit: unit, updated_at: nowIso }));
+        try {
+          await db.upsertMany("product_price_units", "item_name", rows);
+        } catch (e) {
+          // まとめ更新が使えない場合は従来どおり1件ずつ（学習は補助機能なので失敗しても続行）
+          await Promise.all(rows.map((r) => db.upsertByKey("product_price_units", "item_name", r.item_name, { default_unit: r.default_unit, updated_at: r.updated_at }).catch(() => {})));
+        }
+      }
 
       setPreview(null);
       setText("");
@@ -2001,10 +2016,13 @@ function InvoicePanel({ date, onDateChange }) {
   const [loadErr, setLoadErr] = useState("");
 
   const loadItems = useCallback(async () => {
-    setLoadingItems(true);
+    const cached = cachePeek(`line_actual_items:${date}`);
+    if (cached) setItems(cached);
+    setLoadingItems(!cached);
     setLoadErr("");
     try {
       const rows = await db.list("line_actual_items", `?order_date=eq.${date}&order=created_at.asc`);
+      cacheSet(`line_actual_items:${date}`, rows);
       setItems(rows);
     } catch (e) {
       setLoadErr("読み込みに失敗しました: " + (e.message || e));
@@ -2064,7 +2082,10 @@ function InvoicePanel({ date, onDateChange }) {
     // eslint-disable-next-line no-unused-vars
     const rows = group.lineItems.map(({ note, ...li }, idx) => ({ ...li, invoice_id: invoice.id, sort_order: idx }));
     await db.insertMany("invoice_line_items", rows);
-    await Promise.all(group.destLines.map((l) => db.update("line_actual_items", l.id, { invoice_id: invoice.id })));
+    // 2026-10-31 高速化: 明細1行ずつ更新していたのを、id一括指定の1回の更新にした
+    if (group.destLines.length > 0) {
+      await db.updateWhere("line_actual_items", `?id=in.(${group.destLines.map((l) => l.id).join(",")})`, { invoice_id: invoice.id });
+    }
     return invoice;
   };
 
@@ -2080,12 +2101,11 @@ function InvoicePanel({ date, onDateChange }) {
     setSavingAll(true);
     setErr("");
     const failedDestinations = [];
-    for (const group of unsavedByDestination) {
-      try {
-        await saveGroup(group);
-      } catch (e) {
-        failedDestinations.push(group.destination);
-      }
+    // 2026-10-31 高速化: 店舗ごとの保存を直列から、同時5店舗までの並列に変更（保存内容は同じ）。
+    for (let i = 0; i < unsavedByDestination.length; i += 5) {
+      const chunk = unsavedByDestination.slice(i, i + 5);
+      const results = await Promise.allSettled(chunk.map((g) => saveGroup(g)));
+      results.forEach((r, k) => { if (r.status === "rejected") failedDestinations.push(chunk[k].destination); });
     }
     if (failedDestinations.length > 0) {
       setErr(`保存に失敗した店舗があります: ${failedDestinations.join("、")}`);
@@ -2177,25 +2197,27 @@ function HistoryPanel() {
   const [monthProfit, setMonthProfit] = useState(null);
   const [monthProfitTick, setMonthProfitTick] = useState(0);
   const thisMonth = todayStr().slice(0, 7); // 'YYYY-MM'
+  // 検索のたびに今月の利益まで取り直さないよう、納品書の顔ぶれが変わった時だけ再計算する（2026-10-31）
+  const invoiceIdsKey = invoices.map((i) => i.id).join(",");
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         const [y, m] = thisMonth.split("-").map(Number);
         const last = new Date(y, m, 0).getDate();
-        const invs = await db.list("invoices", `?invoice_date=gte.${thisMonth}-01&invoice_date=lte.${thisMonth}-${String(last).padStart(2, "0")}&select=id`);
-        if (invs.length === 0) { if (!cancelled) setMonthProfit(0); return; }
-        const lis = await db.list(
-          "invoice_line_items",
-          `?invoice_id=in.(${invs.map((i) => i.id).join(",")})&select=amount,sell_price,unit_price,price_unit,weight,quantity`
+        // 2026-10-31 高速化: 「納品書ID取得 → 明細取得」の直列2往復を、明細を埋め込んだ1往復にした
+        const invs = await db.list(
+          "invoices",
+          `?invoice_date=gte.${thisMonth}-01&invoice_date=lte.${thisMonth}-${String(last).padStart(2, "0")}&select=id,invoice_line_items(amount,sell_price,unit_price,price_unit,weight,quantity)`
         );
-        if (!cancelled) setMonthProfit(buildProfitTotals(lis).profit);
+        const lis = invs.flatMap((i) => i.invoice_line_items || []);
+        if (!cancelled) setMonthProfit(lis.length === 0 ? 0 : buildProfitTotals(lis).profit);
       } catch (e) {
         if (!cancelled) setMonthProfit(null);
       }
     })();
     return () => { cancelled = true; };
-  }, [thisMonth, monthProfitTick, invoices]);
+  }, [thisMonth, monthProfitTick, invoiceIdsKey]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
 
@@ -2218,16 +2240,33 @@ function HistoryPanel() {
     setSelectedDate(null);
     setSelectedGroups([]);
     try {
-      const rows = await db.list(
-        "invoices",
-        `?invoice_date=gte.${startDate}&invoice_date=lte.${endDate}&order=invoice_date.asc,destination.asc`
-      );
+      // 2026-10-31 高速化: 納品書と明細を1回の通信で取得する（従来は直列2往復）。
+      // 埋め込み取得が使えない場合は従来の2回取得に切り替える。
+      const LI_COLS = "id,invoice_id,amount,sell_price,unit_price,price_unit,weight,quantity";
+      let rows;
+      let embeddedLis = null;
+      try {
+        const raw = await db.list(
+          "invoices",
+          `?invoice_date=gte.${startDate}&invoice_date=lte.${endDate}&select=*,invoice_line_items(${LI_COLS})&order=invoice_date.asc,destination.asc`
+        );
+        embeddedLis = raw.flatMap((r) => r.invoice_line_items || []);
+        // eslint-disable-next-line no-unused-vars
+        rows = raw.map(({ invoice_line_items, ...r }) => r);
+      } catch (e) {
+        rows = await db.list(
+          "invoices",
+          `?invoice_date=gte.${startDate}&invoice_date=lte.${endDate}&order=invoice_date.asc,destination.asc`
+        );
+      }
       setInvoices(rows);
       // 2026-09-23 追加（kento指示）: 一覧の各日付に利益も出すため、明細をまとめて読む。
       // 2026-09-25 修正: 以前は金額・売値しか読んでいなかったため、自動売値が「単価」ではなく
       // 「行の金額」で掛け率を判定してしまい、kg単価1万円以上でも金額が1万円未満の行が1.15倍に
       // なっていた（例: 0.8kg×k12,000=9,600円 → 1.15倍）。単価・単位・目方・数量も読むようにした。
-      if (rows.length > 0) {
+      if (embeddedLis) {
+        setListLineItems(embeddedLis);
+      } else if (rows.length > 0) {
         try {
           const ids = rows.map((r) => r.id).join(",");
           const lis = await db.list("invoice_line_items", `?invoice_id=in.(${ids})&select=id,invoice_id,amount,sell_price,unit_price,price_unit,weight,quantity`);
@@ -2277,23 +2316,21 @@ function HistoryPanel() {
     setLoadingDetail(true);
     setErr("");
     try {
-      const groups = await Promise.all(
-        group.invoices.map(async (inv) => {
-          const items = await db.list("invoice_line_items", `?invoice_id=eq.${inv.id}&order=sort_order.asc`);
-          // 備考はLINE実績データ(line_actual_items)側から読み直す（納品書では品目の右隣に表示）
-          const lineIds = items.map((it) => it.line_actual_item_id).filter(Boolean);
-          if (lineIds.length > 0) {
-            try {
-              const lines = await db.list("line_actual_items", `?id=in.(${lineIds.join(",")})&select=id,note`);
-              const noteById = new Map(lines.map((l) => [l.id, l.note || ""]));
-              items.forEach((it) => { it.note = noteById.get(it.line_actual_item_id) || ""; });
-            } catch (e) {
-              // 備考が読めなくても納品書自体は表示する
-            }
-          }
-          return { invoice: inv, items };
-        })
-      );
+      // 2026-10-31 高速化: 店舗ごとに「明細→備考」を取っていたのを、その日の全店舗分をまとめて2回の通信にした
+      const invIds = group.invoices.map((inv) => inv.id).join(",");
+      const allItems = await db.list("invoice_line_items", `?invoice_id=in.(${invIds})&order=sort_order.asc`);
+      // 備考はLINE実績データ(line_actual_items)側から読み直す（納品書では品目の右隣に表示）
+      const lineIds = allItems.map((it) => it.line_actual_item_id).filter(Boolean);
+      if (lineIds.length > 0) {
+        try {
+          const lines = await db.list("line_actual_items", `?id=in.(${lineIds.join(",")})&select=id,note`);
+          const noteById = new Map(lines.map((l) => [l.id, l.note || ""]));
+          allItems.forEach((it) => { it.note = noteById.get(it.line_actual_item_id) || ""; });
+        } catch (e) {
+          // 備考が読めなくても納品書自体は表示する
+        }
+      }
+      const groups = group.invoices.map((inv) => ({ invoice: inv, items: allItems.filter((it) => it.invoice_id === inv.id) }));
       groups.sort((a, b) => a.invoice.destination.localeCompare(b.invoice.destination, "ja"));
       setSelectedGroups(groups);
       const drafts = {};
