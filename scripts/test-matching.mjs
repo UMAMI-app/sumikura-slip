@@ -148,3 +148,14 @@ console.log('OK: 確実な候補のみデフォルト紐付け／天然鯛系→
   }
   console.log('OK: フグ対応');
 }
+
+// 2026-11-10: 養殖フグ → 陸上/海上が上位、デフォルトは海上
+{
+  const { rankManuscriptCandidates, pickCertainCandidate } = await import('../src/lib/matching.js');
+  const ms = [{ id: 'a', item_name: '天フグ', spec: '' }, { id: 'b', item_name: '陸上養殖フグ', spec: '' }, { id: 'c', item_name: '海上養殖フグA', spec: '' }];
+  const r = rankManuscriptCandidates({ item_name: '養殖フグ' }, ms);
+  if (r.length !== 2 || r[0].item.id !== 'c' || r[1].item.id !== 'b') { console.error('NG 養殖フグ', r); process.exit(1); }
+  if (pickCertainCandidate({ item_name: '養殖フグ' }, ms)?.id !== 'c') { console.error('NG default'); process.exit(1); }
+  if (rankManuscriptCandidates({ item_name: '陸上養殖フグ' }, ms)[0].item.id !== 'b') { console.error('NG 陸上'); process.exit(1); }
+  console.log('OK: 養殖フグ（海上デフォルト）');
+}

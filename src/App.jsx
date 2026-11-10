@@ -343,7 +343,29 @@ function ManuscriptPanel({ date, onDateChange, items, loading, onSaved }) {
 
       {preview && (
         <section style={plainSection()}>
-          <h3 style={h3()}>抽出結果プレビュー — {preview.items.length}件（内容を確認・修正してから保存してください）</h3>
+          <h3 style={h3()}>抽出結果プレビュー — {preview.items.length}件</h3>
+          {/* 2026-11-10: 手動追加・抽出できなかった行・保存ボタンは、表の上（見出しのすぐ下）に置く（kento指示） */}
+          <div style={{ marginBottom: 8 }}>
+            <button style={{ ...btn(), padding: "4px 10px", fontSize: 12 }} onClick={() => addManualItem(null)}>＋ 品目を手動で追加</button>
+          </div>
+          {preview.skippedLines.length > 0 && (
+            <details open style={{ marginBottom: 8, fontSize: 12, color: T.textSub }}>
+              <summary>自動抽出できなかった行・特殊フォーマット（{preview.skippedLines.length}件）— 「追加して修正」で下の表に入れて手入力できます</summary>
+              <div style={{ marginTop: 6 }}>
+                {preview.skippedLines.map((line, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0", borderBottom: `1px solid ${T.softBorder}` }}>
+                    <span style={{ flex: 1, whiteSpace: "pre-wrap" }}>{line}</span>
+                    <button style={{ ...btn(), padding: "2px 8px", fontSize: 11, flexShrink: 0 }} onClick={() => addManualItem(i)}>追加して修正</button>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
+          <div style={{ marginBottom: 12 }}>
+            <button style={btn(true)} disabled={saving || preview.items.length === 0} onClick={saveManuscript}>
+              {saving ? "保存中..." : `この${preview.items.length}件を原稿として保存`}
+            </button>
+          </div>
           <div style={{ overflowX: "auto" }}>
             <table style={table()}>
               <thead>
@@ -376,27 +398,6 @@ function ManuscriptPanel({ date, onDateChange, items, loading, onSaved }) {
                 ))}
               </tbody>
             </table>
-          </div>
-          <div style={{ marginTop: 8 }}>
-            <button style={{ ...btn(), padding: "4px 10px", fontSize: 12 }} onClick={() => addManualItem(null)}>＋ 品目を手動で追加</button>
-          </div>
-          {preview.skippedLines.length > 0 && (
-            <details open style={{ marginTop: 8, fontSize: 12, color: T.textSub }}>
-              <summary>自動抽出できなかった行・特殊フォーマット（{preview.skippedLines.length}件）— 「追加して修正」で上の表に入れて手入力できます</summary>
-              <div style={{ marginTop: 6 }}>
-                {preview.skippedLines.map((line, i) => (
-                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0", borderBottom: `1px solid ${T.softBorder}` }}>
-                    <span style={{ flex: 1, whiteSpace: "pre-wrap" }}>{line}</span>
-                    <button style={{ ...btn(), padding: "2px 8px", fontSize: 11, flexShrink: 0 }} onClick={() => addManualItem(i)}>追加して修正</button>
-                  </div>
-                ))}
-              </div>
-            </details>
-          )}
-          <div style={{ marginTop: 12 }}>
-            <button style={btn(true)} disabled={saving || preview.items.length === 0} onClick={saveManuscript}>
-              {saving ? "保存中..." : `この${preview.items.length}件を原稿として保存`}
-            </button>
           </div>
         </section>
       )}
@@ -1484,19 +1485,42 @@ function ManuscriptLinkSelect({ row, manuscriptItems, manuscriptOptions, onLink 
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const results = useMemo(() => searchManuscriptItems(query, manuscriptItems).slice(0, 10), [query, manuscriptItems]);
+  const boxRef = useRef(null);
+  // 2026-11-10 修正（kento指示）: 候補一覧をスクロールしようとすると入力欄のフォーカスが外れ（onBlur）、
+  // 一覧が閉じて検索できなくなっていた。フォーカスではなく「欄の外をタップしたか」で閉じるようにした。
+  useEffect(() => {
+    if (!open) return undefined;
+    const onDown = (e) => { if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("pointerdown", onDown);
+    return () => document.removeEventListener("pointerdown", onDown);
+  }, [open]);
+  const linkedItem = row.manuscript_item_id ? manuscriptItems.find((m) => m.id === row.manuscript_item_id) : null;
 
   // 2026-09-23 変更（kento指示）: 候補が無く、まだ紐付けもされていない場合は、
   // 「候補なし（全商品から選択）」のプルダウンの代わりに検索欄を出す。
-  if (candidates.length === 0 && !row.manuscript_item_id) {
+  // 2026-11-10 修正（kento指示）: 一度選ぶと検索欄が消えて、選び直し・再検索ができなくなっていた。
+  // 候補なしの行は、選択後も「選んだ商品＋×」を表示し、×で紐付けを外してまた検索できるようにする。
+  if (candidates.length === 0 && row.manuscript_item_id) {
     return (
-      <div style={{ position: "relative", width: 230, maxWidth: "100%" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, maxWidth: 260 }}>
+        <span style={{ fontSize: 12 }}>
+          {linkedItem
+            ? `${linkedItem.item_name}（${linkedItem.origin || "産地未記載"}）${linkedItem.spec ? " " + linkedItem.spec : ""} ${fmtYen(linkedItem.unit_price)}/${linkedItem.price_unit || "?"}`
+            : "（選択済み）"}
+        </span>
+        <button style={{ ...btn(), padding: "2px 8px", fontSize: 11, flexShrink: 0 }} onClick={() => { setQuery(""); onLink(row, ""); }}>変更</button>
+      </div>
+    );
+  }
+  if (candidates.length === 0) {
+    return (
+      <div ref={boxRef} style={{ position: "relative", width: 230, maxWidth: "100%" }}>
         <input
           style={{ ...inputStyle(), width: "100%", boxSizing: "border-box", fontSize: 12 }}
           placeholder="候補なし：原稿から検索"
           value={query}
           onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
           onFocus={() => setOpen(true)}
-          onBlur={() => setTimeout(() => setOpen(false), 150)}
         />
         {open && query.trim() && (
           <div style={{ position: "absolute", zIndex: 20, top: "100%", left: 0, right: 0, background: "#fff", border: `1px solid ${T.border}`, borderRadius: 6, maxHeight: 240, overflowY: "auto", boxShadow: "0 4px 12px rgba(0,0,0,0.12)" }}>
@@ -1506,7 +1530,7 @@ function ManuscriptLinkSelect({ row, manuscriptItems, manuscriptOptions, onLink 
               results.map((mi) => (
                 <div
                   key={mi.id}
-                  onMouseDown={(e) => { e.preventDefault(); onLink(row, mi.id); setQuery(""); setOpen(false); }}
+                  onClick={() => { onLink(row, mi.id); setQuery(""); setOpen(false); }}
                   style={{ padding: "6px 8px", fontSize: 12, cursor: "pointer", borderBottom: `1px solid ${T.softBorder}` }}
                 >
                   {mi.item_name}（{mi.origin || "産地未記載"}）{mi.spec ? " " + mi.spec : ""} {fmtYen(mi.unit_price)}/{mi.price_unit || "?"}

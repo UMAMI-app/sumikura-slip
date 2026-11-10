@@ -175,6 +175,12 @@ export function groupLines(rawText) {
       return;
     }
 
+    // 2026-11-10 追加（kento指示）: 「・代金3,400  1P〜」はパック単価（単位pc）
+    if (current && current.variants.length > 0 && /^[・･]?代金\s*[\d,]+/.test(line)) {
+      current.variants[current.variants.length - 1].priceLine = line.replace(/^[・･]/, '');
+      return;
+    }
+
     if (current && current.isMaruUni && /^[・･][＠@]/.test(line)) {
       const pm = line.match(/([\d,]+)/);
       if (pm) current.maruUniPrice = parseInt(pm[1].replace(/,/g, ''), 10);
@@ -260,6 +266,9 @@ export function groupLines(rawText) {
       prevBlank = true;
       continue;
     }
+    // 2026-11-10 追加（kento指示）: 「〜牡蠣〜」「〜ウニ情報〜」「〜フグ情報〜」のような見出し行は拾わない
+    // （直前の品目の一部になったり、エラー一覧に出たりするのを防ぐ）。
+    if (/^[〜～~][^〜～~]*[〜～~]$/.test(line)) continue;
     // 2026-09-25 追加（kento指示）: 空行の後に「・」なしで「由良廣田丸 SP 約70g 1枚15,800」のような
     // 品目名＋価格の1行が来た場合は、直前の品目（例: ハモ）の規格ではなく新しい品目として扱う。
     // 判定: 空行の直後／かな・漢字3文字以上で始まる／数字（価格）を含む。
@@ -324,7 +333,8 @@ export function parseVariantLineRaw(raw) {
   }
 
   // ×プレフィックス（既に「1枚×13,500」のように×表記になっている場合）
-  m = s.match(/^(.*×\s*)([\d,]+)(.*)$/);
+  // （「500g×1P 3,400」の「×1P」のように、数字の直後に単位が付くものは数量なので価格とみなさない）
+  m = s.match(/^(.*×\s*)([\d,]+)(?!\s*(?:P|パック|枚|個|尾|本|杯|ケ|ヶ|玉|k|g|cs))(.*)$/i);
   if (m) {
     const before = m[1].replace(/×\s*$/, '').trim();
     const value = parseInt(m[2].replace(/,/g, ''), 10);
@@ -340,7 +350,7 @@ export function parseVariantLineRaw(raw) {
   // 数量単位に数字が直接くっついた価格（例:「1枚14,000」「1尾1,250」）
   m = s.match(/^(.*?)(\d*(?:枚|ケ|ヶ|玉|尾|(?<!S)P|個|杯))\s*([\d,]+)\s*(.*)$/);
   if (m) {
-    const before = m[1].trim();
+    const before = m[1].trim().replace(/[×x]$/i, '').trim();
     const unit = m[2].replace(/ケ/, 'ヶ').replace(/^\d+/, '');
     const value = parseInt(m[3].replace(/,/g, ''), 10);
     return { kind: 'single', sizeText: before, value, unit, priceOk: true };
@@ -362,6 +372,10 @@ export function parseVariantLineRaw(raw) {
 
 // ◎ウニの番号付き見出し（例: 北ウニNo.① / 塩水ウニNo.12 / 北ウニ No.３ / 北ウニNO②）
 const UNI_NUMBER_HEADER_RE = /^.*(?:ウニ|うに|雲丹)\s*(?:No|NO|no|Ｎｏ|ＮＯ|№)\s*[.．]?\s*[0-9０-９①-⑳㉑-㉟]+\s*$/;
+
+// 2026-11-10 追加（kento指示）: 「塩水ウニ」「北ウニ」（「北ウニ（無添加）」など括弧付き含む）だけの見出しは
+// 品目名に入れず、その後に書かれた商品名だけを拾う。
+const UNI_PLAIN_HEADER_RE = /^(?:塩水|北)(?:ウニ|うに|雲丹)\s*(?:[（(][^）)]*[）)])?$/;
 
 // 由良ウニの船名（「与助丸」を「与助」より先に判定する）
 const UNI_BOAT_RE = /廣田丸|広田丸|与助丸|与助|山由丸/;
@@ -407,7 +421,8 @@ export function extractKadokuraManuscriptItems(rawText) {
     }
 
     if (group.isMaruUni && group.maruUniPrice != null) {
-      const detail = group.variants.map((v) => v.raw.trim()).filter(Boolean).join(' ');
+      // 〜情報〜 のような見出しが紛れ込んでいても拾わない（2026-11-10）
+      const detail = group.variants.map((v) => v.raw.trim()).filter(Boolean).join(' ').replace(/[〜～~][^〜～~]*[〜～~]/g, ' ').replace(/[\s　]+/g, ' ').trim();
       const all = `${group.name} ${detail}`;
       const pref = ORIGIN_NAMES.find((p) => all.includes(p)) || '';
       items.push({
@@ -415,7 +430,7 @@ export function extractKadokuraManuscriptItems(rawText) {
         // 品目名から外す（番号は①②…、1・12、全角数字など何でも）。見出しが番号付きでない
         // 「八幡浜のウニ」等はこれまでどおり品目名に残す。
         item_name: normalizeName(
-          ((UNI_NUMBER_HEADER_RE.test(group.name.trim()) && detail) ? detail : all).replace(/[\s　]+/g, ' ').trim()
+          ((((UNI_NUMBER_HEADER_RE.test(group.name.trim()) || UNI_PLAIN_HEADER_RE.test(group.name.trim())) && detail)) ? detail : all).replace(/[\s　]+/g, ' ').trim()
         ),
         origin: pref,
         spec: '',
@@ -476,8 +491,10 @@ export function extractKadokuraManuscriptItems(rawText) {
       if (!parsed.priceOk && v.priceLine) {
         const pm = v.priceLine.match(/([\d,]+)/);
         if (pm) {
-          const sizeText = v.raw.replace(/^尾/, '').replace(/約/g, '').replace(/[㌔キロ]/g, 'kg').replace(/[\s　]+/g, ' ').trim();
-          parsed = { kind: 'single', sizeText, value: parseInt(pm[1].replace(/,/g, ''), 10), unit: 'kg', priceOk: true };
+          // 「・代金3,400  1P〜」はパック単価（pc）、「・㌔5,300」はkg単価
+          const isPack = /^代金/.test(v.priceLine);
+          const sizeText = v.raw.replace(/^尾/, '').replace(/約/g, '').replace(/[㌔キロ]/g, 'kg').replace(isPack ? /パック$/ : /$^/, '').replace(/[\s　]+/g, ' ').trim();
+          parsed = { kind: 'single', sizeText, value: parseInt(pm[1].replace(/,/g, ''), 10), unit: isPack ? 'pc' : 'kg', priceOk: true, isPack };
         }
       }
       if (!parsed.priceOk) {
@@ -498,9 +515,16 @@ export function extractKadokuraManuscriptItems(rawText) {
           });
         });
       } else {
+        // 「・代金○○」（パック単価）の品目: 産地行の「兵庫,浜坂」は「兵庫・浜坂」、「北海道（養殖玉Ａ）」は括弧を除いて残す。
+        // 品目名の末尾の粒サイズ（大粒など）は付けない（kento指示 2026-11-10）。
+        let packOrigin = origin;
+        if (parsed.isPack && group.originLine) {
+          const ol = group.originLine.replace(/[（(][^）)]*[）)]/g, '').replace(/[,，、]/g, '・').trim();
+          if (ORIGIN_NAMES.some((pf) => ol.includes(pf))) packOrigin = ol;
+        }
         items.push({
-          item_name: itemName,
-          origin,
+          item_name: parsed.isPack ? itemName.replace(/(?:特大粒|極大粒|大粒|小粒)$/, '') : itemName,
+          origin: packOrigin,
           spec: parsed.sizeText,
           unit_price: parsed.value,
           price_unit: parsed.unit,

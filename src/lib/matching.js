@@ -84,6 +84,13 @@ const CERTAIN_ALIASES = [
   // 品目名に「陸上」「海上」が付いていれば、原稿の同じ「陸上〜」「海上〜」のフグに反応する。
   { test: (n) => /ふぐ|フグ|河豚/.test(n) && n.includes('陸上'), matchManuscript: (mName) => mName.includes('陸上') && /ふぐ|フグ|河豚/.test(mName) },
   { test: (n) => /ふぐ|フグ|河豚/.test(n) && n.includes('海上'), matchManuscript: (mName) => mName.includes('海上') && /ふぐ|フグ|河豚/.test(mName) },
+  // 2026-11-10 追加（kento指示）: 「養殖フグ」（陸上/海上の指定なし）は「陸上養殖フグ」「海上養殖フグ」の両方を
+  // 候補の上に出し、デフォルトは海上養殖フグ（bonus で海上を1点上げて同点を避ける）。
+  {
+    test: (n) => /ふぐ|フグ|河豚/.test(n) && n.includes('養殖'),
+    matchManuscript: (mName) => /(?:陸上|海上)養殖(?:ふぐ|フグ|河豚)/.test(mName),
+    bonus: (mName) => (mName.includes('海上') ? 1 : 0),
+  },
   { test: (n) => /ふぐ|フグ|河豚/.test(n), matchManuscript: (mName) => /天(?:然)?(?:ふぐ|フグ|河豚)/.test(mName) },
 ];
 
@@ -222,6 +229,7 @@ export function rankManuscriptCandidates(lineItem, manuscriptItems) {
     if (!mName) continue;
 
     let tier = 0;
+    let aliasBonus = 0;
     // 「天然鯛SP」のように末尾に規格の「SP」が付いていても対応表の呼び方として扱う
     const qBase = qName.replace(/SP$/i, '');
     const alias = CERTAIN_ALIASES.find(
@@ -230,7 +238,7 @@ export function rankManuscriptCandidates(lineItem, manuscriptItems) {
     if (alias) {
       // 対応表に載っている呼び方は、対応先の原稿品目だけを「確実」とし、
       // それ以外は通常の部分一致判定に任せる
-      if (alias.matchManuscript(mName, mSpec, mi)) tier = 4;
+      if (alias.matchManuscript(mName, mSpec, mi)) { tier = 4; aliasBonus = alias.bonus ? alias.bonus(mName) : 0; }
     }
     if (tier === 0 && mName === qName) tier = 3;
     else if (tier === 0 && (mName.includes(qName) || qName.includes(mName))) tier = 2;
@@ -238,7 +246,7 @@ export function rankManuscriptCandidates(lineItem, manuscriptItems) {
     else if (tier === 0 && boatOf(qName) && boatOf(qName) === boatOf(mName)) tier = 2;
     if (tier === 0) continue;
 
-    let bonus = 0;
+    let bonus = aliasBonus;
     if (qSpec && mSpec && qSpec === mSpec) bonus += 2;
     if (qOrigin && mOrigin && originEq(lineItem.origin, mi.origin)) bonus += 1;
 

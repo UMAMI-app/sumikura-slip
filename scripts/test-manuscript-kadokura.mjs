@@ -161,3 +161,43 @@ const t2 = `・海上養殖フグＡ
   if (JSON.stringify(r) !== JSON.stringify(want)) { console.error('NG fugu', r); process.exit(1); }
   console.log('OK: 規格行＋次行の㌔単価（フグ）');
 }
+
+// 2026-11-10: 見出し行(〜…〜)は拾わない／塩水ウニ・北ウニの頭は付けない／代金(pc)／500g×1P 3,400
+{
+  const { extractKadokuraManuscriptItems: ex } = await import('../src/lib/manuscriptKadokura.js');
+  const t3 = `〜牡蠣〜
+
+・サムライオイスター兵庫坂越
+500g×1P 3,400  1P〜
+
+〜ウニ情報〜
+
+◎北ウニ
+鳳凰　マル北SP250g雲丹
+【散布天然バフン】
+   ・＠20,800
+
+◎塩水ウニ
+平川養殖塩水雲丹　
+【浜中養殖バフン】　
+100g 　
+   ・＠10,800
+
+〜フグ情報〜
+
+・鮮,甘エビ
+兵庫,浜坂
+約500gパック
+   ・代金3,400  1P〜
+
+・ホタテ柱パック大粒
+北海道（養殖玉Ａ）
+約500g/13-15玉
+   ・代金7,600  1P〜
+`;
+  const r = ex(t3);
+  const got = r.items.map((i) => [i.item_name, i.origin, i.spec, i.unit_price, i.price_unit].join('|'));
+  const want = ['サムライオイスター|兵庫|500g|3400|P', '鳳凰 マル北SP250g雲丹 【散布天然バフン】|||20800|枚', '平川養殖塩水雲丹 【浜中養殖バフン】 100g|||10800|pc', '鮮,甘エビ|兵庫・浜坂|500g|3400|pc', 'ホタテ柱パック|北海道|500g/13-15玉|7600|pc'];
+  if (JSON.stringify(got) !== JSON.stringify(want) || r.skippedLines.length) { console.error('NG 2026-11-10', got, r.skippedLines); process.exit(1); }
+  console.log('OK: 見出し行無視・ウニ頭削除・代金pc');
+}
