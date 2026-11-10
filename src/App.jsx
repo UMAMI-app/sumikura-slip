@@ -234,6 +234,9 @@ function tabBtnStyle(active) {
 }
 
 /* ============================= 原稿読み込み ============================= */
+// 2026-11-10: 保存済み原稿の「産地」列は4文字分の幅（kento指示）。それ以上は折り返す。
+const ORIGIN_COL = { width: "4em", minWidth: "4em", maxWidth: "4em", boxSizing: "content-box", whiteSpace: "normal", wordBreak: "break-all" };
+
 function ManuscriptPanel({ date, onDateChange, items, loading, onSaved }) {
   const [pasteText, setPasteText] = useState("");
   const [preview, setPreview] = useState(null); // { items, skippedLines }
@@ -302,6 +305,43 @@ function ManuscriptPanel({ date, onDateChange, items, loading, onSaved }) {
     }
   };
 
+  // 2026-11-10 追加（kento指示）: 前日の原稿を、そのまま今日の原稿として引き継ぐ。
+  // 前日（date-1）に原稿が無ければ、それより前で一番新しい日の原稿を使う。コピーするだけで元の原稿は変更しない。
+  const [carrying, setCarrying] = useState(false);
+  const carryOverPrevious = async () => {
+    setCarrying(true);
+    setErr("");
+    try {
+      const [y, m, d] = date.split("-").map(Number);
+      const prev = new Date(y, m - 1, d - 1);
+      const prevStr = `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, "0")}-${String(prev.getDate()).padStart(2, "0")}`;
+      let srcBatches = await db.list("manuscript_batches", `?manuscript_date=eq.${prevStr}&order=created_at.desc`);
+      let srcDate = prevStr;
+      if (srcBatches.length === 0) {
+        const older = await db.list("manuscript_batches", `?manuscript_date=lt.${date}&order=manuscript_date.desc,created_at.desc&limit=1`);
+        if (older.length === 0) { setErr("引き継げる過去の原稿がありません。"); return; }
+        srcDate = older[0].manuscript_date;
+        srcBatches = await db.list("manuscript_batches", `?manuscript_date=eq.${srcDate}&order=created_at.desc`);
+      }
+      const srcItems = await db.list("manuscript_items", `?batch_id=in.(${srcBatches.map((b) => `"${b.id}"`).join(",")})&order=item_name.asc`);
+      if (srcItems.length === 0) { setErr(`${srcDate} の原稿に商品がありません。`); return; }
+      const [batch] = await db.insert("manuscript_batches", {
+        manuscript_date: date,
+        source_type: "carry_over",
+        source_filename: `${srcDate}の原稿を引き継ぎ`,
+        raw_grid_text: srcBatches[0].raw_grid_text || "",
+      });
+      // eslint-disable-next-line no-unused-vars
+      const rows = srcItems.map(({ id, batch_id, created_at, ...it }) => ({ ...it, batch_id: batch.id }));
+      await db.insertMany("manuscript_items", rows);
+      onSaved();
+    } catch (e) {
+      setErr("引き継ぎに失敗しました: " + (e.message || e));
+    } finally {
+      setCarrying(false);
+    }
+  };
+
   // 2026-09-21 追加変更（kento指示）: 保存済みの原稿もクリア（削除）できるようにする。
   // manuscript_batchesを削除すればmanuscript_itemsはon delete cascadeでまとめて消える。
   const [clearingSaved, setClearingSaved] = useState(false);
@@ -336,6 +376,11 @@ function ManuscriptPanel({ date, onDateChange, items, loading, onSaved }) {
         <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
           <button style={btn(true)} onClick={handleExtract}>解析する</button>
           <button style={btn()} onClick={() => { setPasteText(""); setPreview(null); }}>クリア</button>
+          {!loading && items.length === 0 && (
+            <button style={btn()} disabled={carrying} onClick={carryOverPrevious}>
+              {carrying ? "引き継ぎ中..." : "前日の原稿を引き継ぐ"}
+            </button>
+          )}
         </div>
       </section>
 
@@ -403,7 +448,7 @@ function ManuscriptPanel({ date, onDateChange, items, loading, onSaved }) {
 
       <section style={plainSection()}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-          <h3 style={h3()}>{date} に保存済みの原稿商品（{items.length}件）</h3>
+          <h3 style={{ ...h3(), margin: 0 }}>{date}の原稿</h3>
           {items.length > 0 && (
             <button style={btn()} disabled={clearingSaved} onClick={clearSavedManuscript}>
               {clearingSaved ? "削除中..." : "クリア"}
@@ -420,17 +465,17 @@ function ManuscriptPanel({ date, onDateChange, items, loading, onSaved }) {
               <thead>
                 <tr>
                   <th style={th()}>品目</th>
-                  <th style={th()}>産地</th>
+                  <th style={{ ...th(), ...ORIGIN_COL }}>産地</th>
                   <th style={th()}>規格</th>
                   <th style={th()}>単価</th>
-                  <th style={th()}>単位</th>
+                  <th style={{ ...th(), whiteSpace: "nowrap" }}>単位</th>
                 </tr>
               </thead>
               <tbody>
                 {items.map((it) => (
                   <tr key={it.id}>
                     <td style={td()}>{it.item_name}</td>
-                    <td style={{ ...td(), whiteSpace: "nowrap" }}>{it.origin}</td>
+                    <td style={{ ...td(), ...ORIGIN_COL }}>{it.origin}</td>
                     <td style={td()}>{it.spec}</td>
                     <td style={td()}>{fmtYen(it.unit_price)}</td>
                     <td style={{ ...td(), whiteSpace: "nowrap" }}>{it.price_unit}</td>
