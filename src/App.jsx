@@ -343,14 +343,18 @@ function ManuscriptPanel({ date, onDateChange, items, loading, onSaved }) {
 
       {preview && (
         <section style={plainSection()}>
-          <h3 style={h3()}>抽出結果プレビュー — {preview.items.length}件</h3>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
+            <h3 style={{ ...h3(), margin: 0 }}>抽出結果</h3>
+            <button style={btn(true)} disabled={saving || preview.items.length === 0} onClick={saveManuscript}>
+              {saving ? "保存中..." : "原稿を保存"}
+            </button>
+          </div>
           {/* 2026-11-10: 手動追加・抽出できなかった行・保存ボタンは、表の上（見出しのすぐ下）に置く（kento指示） */}
           <div style={{ marginBottom: 8 }}>
             <button style={{ ...btn(), padding: "4px 10px", fontSize: 12 }} onClick={() => addManualItem(null)}>＋ 品目を手動で追加</button>
           </div>
           {preview.skippedLines.length > 0 && (
-            <details open style={{ marginBottom: 8, fontSize: 12, color: T.textSub }}>
-              <summary>自動抽出できなかった行・特殊フォーマット（{preview.skippedLines.length}件）— 「追加して修正」で下の表に入れて手入力できます</summary>
+            <div style={{ marginBottom: 8, fontSize: 12, color: T.textSub }}>
               <div style={{ marginTop: 6 }}>
                 {preview.skippedLines.map((line, i) => (
                   <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0", borderBottom: `1px solid ${T.softBorder}` }}>
@@ -359,13 +363,8 @@ function ManuscriptPanel({ date, onDateChange, items, loading, onSaved }) {
                   </div>
                 ))}
               </div>
-            </details>
+            </div>
           )}
-          <div style={{ marginBottom: 12 }}>
-            <button style={btn(true)} disabled={saving || preview.items.length === 0} onClick={saveManuscript}>
-              {saving ? "保存中..." : `この${preview.items.length}件を原稿として保存`}
-            </button>
-          </div>
           <div style={{ overflowX: "auto" }}>
             <table style={table()}>
               <thead>
