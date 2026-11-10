@@ -1,4 +1,5 @@
 import { originAliases } from './origins.js';
+import { ORIGIN_NAMES } from './manuscriptKadokura.js';
 // LINE実績データの品目と、原稿(manuscript_items)の候補を突合するロジック。
 // AIは使わず、単純な文字列一致・部分一致・正規化一致 + 規格/産地ボーナスで
 // 候補を自動で絞り込み、最終的な確定はユーザーが行う
@@ -93,6 +94,39 @@ const CERTAIN_ALIASES = [
   },
   { test: (n) => /ふぐ|フグ|河豚/.test(n), matchManuscript: (mName) => /天(?:然)?(?:ふぐ|フグ|河豚)/.test(mName) },
 ];
+
+// 2026-11-10 追加（kento指示）: 天ブリ・タラ白子・サクラエビ・カワハギの対応。
+// 天ブリ: 原稿の「天(然)ブリ」。品目名に「背」「腹」があれば原稿の「(背)」「(腹)」の行、産地（富山・北海道など）が
+//   品目名に付いていれば原稿の同じ産地の行だけを拾う。
+// タラ白子: 原稿の「タラ白子」。品目名に「4特」「3特」があれば規格にそれを含む行を拾う。
+{
+  const prefIn = (q) => ORIGIN_NAMES.find((p) => q.includes(p)) || '';
+  CERTAIN_ALIASES.push(
+    {
+      lineNames: ['天ブリ', '天然ブリ'],
+      prefix: true,
+      matchManuscript: (mName, mSpec, mi, q = '') => {
+        if (!/^天(?:然)?ブリ/.test(mName)) return false;
+        if (q.includes('背') && !mName.includes('(背)')) return false;
+        if (q.includes('腹') && !mName.includes('(腹)')) return false;
+        const pf = prefIn(q);
+        if (pf && mi?.origin && !String(mi.origin).includes(pf)) return false;
+        return true;
+      },
+    },
+    {
+      lineNames: ['タラ白子', 'たら白子', '鱈白子'],
+      prefix: true,
+      matchManuscript: (mName, mSpec, mi, q = '') => {
+        if (!mName.includes('タラ白子')) return false;
+        const grade = (q.match(/([34])特/) || [])[1];
+        return !grade || `${mName}${mSpec}`.includes(`${grade}特`);
+      },
+    },
+    { lineNames: ['桜エビ', 'さくらえび', 'サクラエビ', '桜海老'], prefix: true, matchManuscript: (mName) => mName.includes('サクラエビ') },
+    { lineNames: ['カワハギ', 'かわはぎ', '皮剥'], prefix: true, matchManuscript: (mName) => mName.includes('丸ハゲ') },
+  );
+}
 
 // 由良ウニの船名。LINE側・原稿側の両方に同じ船名があれば候補にする（tier 2）。
 // 「与助丸」は「与助」より先に判定する。
@@ -238,7 +272,7 @@ export function rankManuscriptCandidates(lineItem, manuscriptItems) {
     if (alias) {
       // 対応表に載っている呼び方は、対応先の原稿品目だけを「確実」とし、
       // それ以外は通常の部分一致判定に任せる
-      if (alias.matchManuscript(mName, mSpec, mi)) { tier = 4; aliasBonus = alias.bonus ? alias.bonus(mName) : 0; }
+      if (alias.matchManuscript(mName, mSpec, mi, qName)) { tier = 4; aliasBonus = alias.bonus ? alias.bonus(mName) : 0; }
     }
     if (tier === 0 && mName === qName) tier = 3;
     else if (tier === 0 && (mName.includes(qName) || qName.includes(mName))) tier = 2;

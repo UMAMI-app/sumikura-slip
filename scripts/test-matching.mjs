@@ -159,3 +159,18 @@ console.log('OK: 確実な候補のみデフォルト紐付け／天然鯛系→
   if (rankManuscriptCandidates({ item_name: '陸上養殖フグ' }, ms)[0].item.id !== 'b') { console.error('NG 陸上'); process.exit(1); }
   console.log('OK: 養殖フグ（海上デフォルト）');
 }
+
+// 2026-11-10: 天ブリ/タラ白子/サクラエビ/カワハギ
+{
+  const { rankManuscriptCandidates: rk } = await import('../src/lib/matching.js');
+  const ms = [
+    { id: 'b1', item_name: '天ブリ(背)', origin: '北海道', spec: '11k前後' }, { id: 'b2', item_name: '天ブリ(腹)', origin: '北海道', spec: '11k前後' },
+    { id: 'b3', item_name: '天ブリ(背)', origin: '富山', spec: '10kup' }, { id: 'b4', item_name: '天ブリ(腹)', origin: '富山', spec: '10kup' },
+    { id: 't4', item_name: 'タラ白子', origin: '北海道', spec: '4特500g×1P' }, { id: 't3', item_name: 'タラ白子', origin: '北海道', spec: '3特500×1P' },
+    { id: 's', item_name: 'サクラエビ', origin: '静岡', spec: '' }, { id: 'm', item_name: '丸ハゲ', origin: '兵庫', spec: '250g前後' },
+  ];
+  const top = (name) => rk({ item_name: name }, ms).filter((r) => r.tier === 4).map((r) => r.item.id).sort().join(',');
+  const cases = [['天ブリ', 'b1,b2,b3,b4'], ['天ブリ背', 'b1,b3'], ['天ブリ富山 腹', 'b4'], ['天ブリ北海道', 'b1,b2'], ['タラ白子', 't3,t4'], ['たら白子4特', 't4'], ['タラ白子 3特', 't3'], ['桜エビ', 's'], ['サクラエビ', 's'], ['カワハギ', 'm']];
+  for (const [n, want] of cases) { const got = top(n); if (got !== want) { console.error('NG', n, got, '!=', want); process.exit(1); } }
+  console.log('OK: 天ブリ/タラ白子/サクラエビ/カワハギ');
+}

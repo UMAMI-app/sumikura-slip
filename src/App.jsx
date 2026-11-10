@@ -1546,7 +1546,7 @@ function ManuscriptLinkSelect({ row, manuscriptItems, manuscriptOptions, onLink 
   // 候補なしの行は、選択後も「選んだ商品＋×」を表示し、×で紐付けを外してまた検索できるようにする。
   if (candidates.length === 0 && row.manuscript_item_id) {
     return (
-      <div style={{ display: "flex", alignItems: "center", gap: 6, maxWidth: 260 }}>
+      <div style={{ ...inputStyle(), display: "flex", alignItems: "center", gap: 6, maxWidth: 260, fontSize: 12 }}>
         <span style={{ fontSize: 12 }}>
           {linkedItem
             ? `${linkedItem.item_name}（${linkedItem.origin || "産地未記載"}）${linkedItem.spec ? " " + linkedItem.spec : ""} ${fmtYen(linkedItem.unit_price)}/${linkedItem.price_unit || "?"}`
